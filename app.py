@@ -37,11 +37,12 @@ if not access_token:
 
 if st.button("🔄 Refresh Live Data"):
     st.rerun()
-
 def fetch_upstox_intraday_data(token, inst_token, interval):
     encoded_inst_token = urllib.parse.quote(inst_token, safe='')
-    # यहाँ बिल्कुल सटीक और आधिकारिक Upstox API URL वापस सेट कर दिया गया है
+    
+    # यह है असली और सही लाइव डेटा पाथ
     url = f"https://upstox.com{encoded_inst_token}/{interval}"
+    
     headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
     try:
         response = requests.get(url, headers=headers, timeout=10)
@@ -64,6 +65,7 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
     except Exception as e:
         st.error(f"Error: {str(e)}")
         return None
+
 
 # स्मार्ट मनी कॉन्सेप्ट्स (SMC) इंजन
 def calculate_smc_metrics(df):
