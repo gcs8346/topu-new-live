@@ -18,7 +18,8 @@ INSTRUMENT_MAP = {
     "RELIANCE": "NSE_EQ|INE002A01018",
     "SBIN (SBI)": "NSE_EQ|INE062A01020",
     "TATA MOTORS": "NSE_EQ|INE155A01022"
-}
+    "CRUDE OIL FUT": "MCX_FO|CRUDEOIL26NOV20000",
+    "GOLD FUT": "MCX_FO|GOLD26DEC20000"}
 
 st.sidebar.header("🔑 Upstox Access")
 access_token = st.sidebar.text_input("Enter Upstox Access Token", type="password").strip()
