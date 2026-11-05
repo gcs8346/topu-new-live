@@ -41,7 +41,7 @@ if st.button("🔄 Refresh Live Data"):
 def fetch_upstox_intraday_data(token, inst_token, interval):
     encoded_inst_token = urllib.parse.quote(inst_token, safe='')
     # यहाँ बिल्कुल ओरिजिनल और सही अपस्टॉक्स URL फिक्स कर दिया गया है
-    url = f"https://upstox.com{encoded_inst_token}/{interval}"
+    url = f"https://upstox.com/{encoded_inst_token}/{interval}"
     headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
     try:
         response = requests.get(url, headers=headers, timeout=10)
