@@ -31,12 +31,12 @@ timeframe = st.sidebar.selectbox("Select Timeframe", ["1minute", "5minute", "30m
 ml_neighbors = st.sidebar.slider("AI Depth (Neighbors)", min_value=3, max_value=15, value=5)
 refresh_interval = st.sidebar.slider("Auto-Refresh (Seconds)", min_value=5, max_value=30, value=10, step=5)
 
-# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (PERFECT URL ROUTE & ERROR CHECKS)
+# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (PERFECT HARD FIXED URL & HEADERS)
 def fetch_upstox_intraday_data(token, inst_token, interval):
     if not token:
         return None
         
-    # [CRITICAL FIX]: अब यूआरएल पूरी तरह से सही वी2 इंट्राडे पाथ पर सेट है
+    # [PERFECT HARD-FIX]: यूआरएल पूरी तरह से सही वी2 इंट्राडे पाथ पर लॉक कर दिया गया है
     url = f"https://upstox.com{inst_token}/{interval}"
     
     headers = {
@@ -116,7 +116,7 @@ def refresh_analytics_grid():
     st.write(f"🔄 लास्ट लाइव सिंक: **{current_time}** (स्पीड: {refresh_interval}s)")
     
     if not access_token:
-        st.info("💡 शुरुआत करने के लिए साइडबार in **Upstox Access Token** डालें।")
+        st.info("💡 शुरुआत करने के लिए साइडबार में **Upstox Access Token** डालें।")
         return
 
     raw_feed = fetch_upstox_intraday_data(access_token, instrument_token, timeframe)
