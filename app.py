@@ -2,7 +2,7 @@ import streamlit as st
 # --- AUTO REFRESH CODE START ---
 from streamlit_autorefresh import st_autorefresh
 
-# हर 5 सेकंड (5000ms) में डैशबोर्ड को ऑटोमैटिकली री-रन करेगा
+# हर 1 सेकंड (1000ms) में डैशबोर्ड को ऑटोमैटिकली री-रन करेगा
 refresh_count = st_autorefresh(
     interval=1000, 
     limit=999999, 
