@@ -31,13 +31,13 @@ timeframe = st.sidebar.selectbox("Select Timeframe", ["1minute", "5minute", "30m
 ml_neighbors = st.sidebar.slider("AI Depth (Neighbors)", min_value=3, max_value=15, value=5)
 refresh_interval = st.sidebar.slider("Auto-Refresh (Seconds)", min_value=5, max_value=30, value=10, step=5)
 
-# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (API DOMAIN LOCKED & JSON SECURED)
+# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (PERFECT DOMAIN FIXED)
 def fetch_upstox_intraday_data(token, inst_token, interval):
     if not token:
         return None
         
-    # [FINAL TECHNICAL FIX]: सटीक API डोमेन (://upstox.com) सेट कर दिया गया है
-    base_domain = "https://://upstox.com"
+    # [FINAL TYPO FIX]: बेस डोमेन को बिल्कुल सटीक तरीके से सेट कर दिया गया है
+    base_domain = "https://api." + "upstox.com"
     api_route = "/v2/historical-candle/intraday"
     url = f"{base_domain}{api_route}/{inst_token}/{interval}"
     
@@ -49,7 +49,6 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
     try:
         response = requests.get(url, headers=headers)
         
-        # अगर सर्वर से JSON की जगह गलत HTML रिस्पॉन्स आता है तो उसे कैच करेगा
         if response.status_code != 200:
             st.error(f"❌ Server Returned HTTP Error: {response.status_code}")
             return None
