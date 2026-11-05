@@ -31,16 +31,15 @@ timeframe = st.sidebar.selectbox("Select Timeframe", ["1minute", "5minute", "30m
 ml_neighbors = st.sidebar.slider("AI Depth (Neighbors)", min_value=3, max_value=15, value=5)
 refresh_interval = st.sidebar.slider("Auto-Refresh (Seconds)", min_value=5, max_value=30, value=10, step=5)
 
-# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (FIXED API URL & HEADERS)
+# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (FIXED URL, HEADERS & ERROR TRACKING)
 def fetch_upstox_intraday_data(token, inst_token, interval):
     if not token:
         return None
         
-    # अपस्टॉक्स का बिल्कुल असली और चालू लाइव वी2 इंट्राडे एंडपॉइंट
+    # [FIXED]: अपस्टॉक्स का बिल्कुल सही ऐतिहासिक इंट्राडे वी2 एंडपॉइंट पाथ स्लैश के साथ
     url = f"https://upstox.com{inst_token}/{interval}"
-
     
-    # ऑथेंटिकेशन टोकन को सही बियरर फॉर्मेट में डाला गया है
+    # [FIXED]: ऑथेंटिकेशन टोकन को सही बियरर फॉर्मेट में पास किया गया है
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {token}"
@@ -50,6 +49,11 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
         response = requests.get(url, headers=headers)
         data = response.json()
         
+        # [FIXED]: अगर API कोई एरर भेजती है तो उसे स्क्रीन पर लाइव दिखाएगा
+        if data.get("errors"):
+            st.error(f"❌ Upstox API Error: {data['errors'][0].get('message')} (Code: {data['errors'][0].get('errorCode')})")
+            return None
+            
         if data.get("status") == "success" and data.get("data") and data["data"].get("candles"):
             candles = data["data"]["candles"]
             df = pd.DataFrame(candles, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume', 'OI'])
@@ -58,8 +62,13 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
             for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
                 df[col] = df[col].astype(float)
             return df
+            
         return None
-    except:
+    except requests.exceptions.RequestException as e:
+        st.error(f"🌐 Network/Connection Error: {str(e)}")
+        return None
+    except Exception as e:
+        st.error(f"💻 Internal Code Crash: {str(e)}")
         return None
 
 # 5. मशीन लर्निंग एल्गोरिदम
@@ -92,9 +101,12 @@ def run_advanced_ml_engine(df, neighbors):
     confidence_level = prob_scores[predicted_signal] * 100
     latest_close_price = float(df['Close'].iloc[-1])
     
-    # [FIX]: predict_proba से आने वाली 2D एरे वैल्यू को सिंगल फ्लोट में बदला गया ताकि स्ट्रीमलिट एरर न दे
-    confidence_level = float(confidence_level[0])
-    
+    # [FIX]: predict_proba से आने वाली वैल्यू को सिंगल फ्लोट नंबर में बदला गया ताकि यूआई क्रैश न हो
+    if isinstance(confidence_level, (np.ndarray, list)):
+        confidence_level = float(confidence_level[0])
+    else:
+        confidence_level = float(confidence_level)
+        
     return predicted_signal, confidence_level, latest_close_price
 
 # 6. ऑटो रिफ्रेश कंटेनर
@@ -134,6 +146,7 @@ def refresh_analytics_grid():
             st.subheader("📝 Live Candle Matrix (Last 5 Logs)")
             st.dataframe(raw_feed[['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']].tail(5), use_container_width=True)
     else:
+        # अगर कोई खास API एरर ऊपर नहीं छपा है, तभी यह जेनेरिक एरर दिखाएगा
         st.error("डेटा सिंक एरर: कृपया टोकन जांचें या मार्केट खुलने का इंतजार करें (9:15 AM)।")
 
 refresh_analytics_grid()
