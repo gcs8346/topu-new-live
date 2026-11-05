@@ -38,6 +38,7 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
         
     # अपस्टॉक्स का बिल्कुल असली और चालू लाइव वी2 इंट्राडे एंडपॉइंट
     url = f"https://upstox.com{inst_token}/{interval}"
+
     
     # ऑथेंटिकेशन टोकन को सही बियरर फॉर्मेट में डाला गया है
     headers = {
