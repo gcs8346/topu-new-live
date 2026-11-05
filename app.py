@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 import requests
 from datetime import datetime
+import urllib.parse
 
 # 1. पेज सेटअप
 st.set_page_config(page_title="Live AI Market Engine", layout="wide")
@@ -31,15 +32,17 @@ timeframe = st.sidebar.selectbox("Select Timeframe", ["1minute", "5minute", "30m
 ml_neighbors = st.sidebar.slider("AI Depth (Neighbors)", min_value=3, max_value=15, value=5)
 refresh_interval = st.sidebar.slider("Auto-Refresh (Seconds)", min_value=5, max_value=30, value=10, step=5)
 
-# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (PERFECT DOMAIN FIXED)
+# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (URL ENCODING SECURED)
 def fetch_upstox_intraday_data(token, inst_token, interval):
     if not token:
         return None
         
-    # [FINAL TYPO FIX]: बेस डोमेन को बिल्कुल सटीक तरीके से सेट कर दिया गया है
+    # [CRITICAL FIX]: इंस्ट्रूमेंट टोकन के स्पेशल कैरेक्टर्स (|) को यूआरएल-एन्कोड किया गया है
+    encoded_inst_token = urllib.parse.quote(inst_token)
+    
     base_domain = "https://api." + "upstox.com"
     api_route = "/v2/historical-candle/intraday"
-    url = f"{base_domain}{api_route}/{inst_token}/{interval}"
+    url = f"{base_domain}{api_route}/{encoded_inst_token}/{interval}"
     
     headers = {
         "Accept": "application/json",
@@ -50,12 +53,12 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
         response = requests.get(url, headers=headers)
         
         if response.status_code != 200:
+            # अगर टोकन एक्सपायर/अमान्य है तो यहाँ साफ 401 या अन्य सही एरर कोड छपेगा
             st.error(f"❌ Server Returned HTTP Error: {response.status_code}")
             return None
             
         data = response.json()
         
-        # अगर API सर्वर टोकन रिजेक्ट करता है तो सटीक मैसेज दिखाएगा
         if data.get("errors"):
             st.error(f"❌ Upstox API Error: {data['errors'].get('message')} (Code: {data['errors'].get('errorCode')})")
             return None
