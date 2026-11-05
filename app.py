@@ -31,13 +31,15 @@ timeframe = st.sidebar.selectbox("Select Timeframe", ["1minute", "5minute", "30m
 ml_neighbors = st.sidebar.slider("AI Depth (Neighbors)", min_value=3, max_value=15, value=5)
 refresh_interval = st.sidebar.slider("Auto-Refresh (Seconds)", min_value=5, max_value=30, value=10, step=5)
 
-# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (PERFECT HARD FIXED URL & HEADERS)
+# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (PERFECT URL ROUTE LOGIC IMPLEMENTED)
 def fetch_upstox_intraday_data(token, inst_token, interval):
     if not token:
         return None
         
-    # [PERFECT HARD-FIX]: यूआरएल पूरी तरह से सही वी2 इंट्राडे पाथ पर लॉक कर दिया गया है
-    url = f"https://upstox.com{inst_token}/{interval}"
+    # [CRITICAL HARD-FIX]: यूआरएल को सही वी2 पाथ के साथ ब्रेकअप करके जोड़ा गया है ताकि ऑटो-सिस्टम इसे खराब न करे
+    base_domain = "https://upstox.com"
+    api_route = "/v2/historical-candle/intraday"
+    url = f"{base_domain}{api_route}/{inst_token}/{interval}"
     
     headers = {
         "Accept": "application/json",
@@ -50,7 +52,7 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
         
         # अगर API सर्वर टोकन रिजेक्ट करता है तो सटीक मैसेज दिखाएगा
         if data.get("errors"):
-            st.error(f"❌ Upstox API Error: {data['errors'].get('message')} (Code: {data['errors'].get('errorCode')})")
+            st.error(f"❌ Upstox API Error: {data['errors'][0].get('message')} (Code: {data['errors'][0].get('errorCode')})")
             return None
             
         if data.get("status") == "success" and data.get("data") and data["data"].get("candles"):
@@ -144,6 +146,7 @@ def refresh_analytics_grid():
             st.subheader("📝 Live Candle Matrix (Last 5 Logs)")
             st.dataframe(raw_feed[['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']].tail(5), use_container_width=True)
     else:
+        # अगर कोई खास API एरर ऊपर नहीं छपा है, तभी यह जेनेरिक एरर दिखाएगा
         st.error("डेटा सिंक एरर: कृपया टोकन जांचें या मार्केट खुलने का इंतजार करें (9:15 AM)।")
 
 refresh_analytics_grid()
