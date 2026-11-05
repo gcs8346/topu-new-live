@@ -37,8 +37,8 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
     if not token:
         return None
         
-    # [CRITICAL FIX]: इंस्ट्रूमेंट टोकन के स्पेशल कैरेक्टर्स (|) को यूआरएल-एन्कोड किया गया है
-    encoded_inst_token = urllib.parse.quote(inst_token)
+    # [FIXED]: safe='' se | aur space dono properly encode honge
+    encoded_inst_token = urllib.parse.quote(inst_token, safe='')
     
     base_domain = "https://api." + "upstox.com"
     api_route = "/v2/historical-candle/intraday"
@@ -53,7 +53,6 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
         response = requests.get(url, headers=headers)
         
         if response.status_code != 200:
-            # अगर टोकन एक्सपायर/अमान्य है तो यहाँ साफ 401 या अन्य सही एरर कोड छपेगा
             st.error(f"❌ Server Returned HTTP Error: {response.status_code}")
             return None
             
@@ -107,13 +106,9 @@ def run_advanced_ml_engine(df, neighbors):
     predicted_signal = clf.predict(latest_live_features)
     
     prob_scores = clf.predict_proba(latest_live_features)
-    confidence_level = prob_scores[predicted_signal] * 100
+    # [FIXED]: Correct confidence extraction
+    confidence_level = float(prob_scores[0][predicted_signal[0]] * 100)
     latest_close_price = float(df['Close'].iloc[-1])
-    
-    if isinstance(confidence_level, (np.ndarray, list)):
-        confidence_level = float(confidence_level)
-    else:
-        confidence_level = float(confidence_level)
         
     return predicted_signal, confidence_level, latest_close_price
 
