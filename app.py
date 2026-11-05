@@ -1,4 +1,4 @@
-import streamlit st
+import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
@@ -50,7 +50,7 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
         
         # अगर API सर्वर टोकन रिजेक्ट करता है तो सटीक मैसेज दिखाएगा
         if data.get("errors"):
-            st.error(f"❌ Upstox API Error: {data['errors'][0].get('message')} (Code: {data['errors'][0].get('errorCode')})")
+            st.error(f"❌ Upstox API Error: {data['errors'].get('message')} (Code: {data['errors'].get('errorCode')})")
             return None
             
         if data.get("status") == "success" and data.get("data") and data["data"].get("candles"):
@@ -116,7 +116,7 @@ def refresh_analytics_grid():
     st.write(f"🔄 लास्ट लाइव सिंक: **{current_time}** (स्पीड: {refresh_interval}s)")
     
     if not access_token:
-        st.info("💡 शुरुआत करने के लिए साइडबार में **Upstox Access Token** डालें।")
+        st.info("💡 शुरुआत करने के लिए साइडबार in **Upstox Access Token** डालें।")
         return
 
     raw_feed = fetch_upstox_intraday_data(access_token, instrument_token, timeframe)
