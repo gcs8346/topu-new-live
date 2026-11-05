@@ -31,16 +31,18 @@ timeframe = st.sidebar.selectbox("Select Timeframe", ["1minute", "5minute", "30m
 ml_neighbors = st.sidebar.slider("AI Depth (Neighbors)", min_value=3, max_value=15, value=5)
 refresh_interval = st.sidebar.slider("Auto-Refresh (Seconds)", min_value=5, max_value=30, value=10, step=5)
 
-# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (CORRECT URL FIXED)
+# 4. शुद्ध लाइव अपस्टॉक्स इंट्राडे API (FIXED API URL & HEADERS)
 def fetch_upstox_intraday_data(token, inst_token, interval):
     if not token:
         return None
         
-    # अपस्टॉक्स का बिल्कुल असली और चालू लाइव इंट्राडे एंडपॉइंट
+    # अपस्टॉक्स का बिल्कुल असली और चालू लाइव वी2 इंट्राडे एंडपॉइंट
     url = f"https://upstox.com{inst_token}/{interval}"
     
+    # ऑथेंटिकेशन टोकन को सही बियरर फॉर्मेट में डाला गया है
     headers = {
-        "Accept": "application/json"
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}"
     }
     
     try:
@@ -89,6 +91,9 @@ def run_advanced_ml_engine(df, neighbors):
     confidence_level = prob_scores[predicted_signal] * 100
     latest_close_price = float(df['Close'].iloc[-1])
     
+    # [FIX]: predict_proba से आने वाली 2D एरे वैल्यू को सिंगल फ्लोट में बदला गया ताकि स्ट्रीमलिट एरर न दे
+    confidence_level = float(confidence_level[0])
+    
     return predicted_signal, confidence_level, latest_close_price
 
 # 6. ऑटो रिफ्रेश कंटेनर
@@ -131,4 +136,3 @@ def refresh_analytics_grid():
         st.error("डेटा सिंक एरर: कृपया टोकन जांचें या मार्केट खुलने का इंतजार करें (9:15 AM)।")
 
 refresh_analytics_grid()
-
