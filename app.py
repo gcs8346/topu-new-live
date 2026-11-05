@@ -28,7 +28,8 @@ access_token = st.sidebar.text_input("Enter Upstox Access Token", type="password
 selected_asset = st.sidebar.selectbox("Select Asset to Analyze", list(INSTRUMENT_MAP.keys()))
 instrument_token = INSTRUMENT_MAP[selected_asset]
 
-timeframe = st.sidebar.selectbox("Select Timeframe", ["1minute", "5minute", "30minute"], index=1)
+# [CHANGED] 5minute hata diya kyuki Upstox Intraday me support nahi karta - 400 error isi se aa raha tha
+timeframe = st.sidebar.selectbox("Select Timeframe", ["1minute", "30minute"], index=0)
 ml_neighbors = st.sidebar.slider("AI Depth (Neighbors)", min_value=3, max_value=15, value=5)
 refresh_interval = st.sidebar.slider("Auto-Refresh (Seconds)", min_value=5, max_value=30, value=10, step=5)
 
@@ -37,7 +38,7 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
     if not token:
         return None
         
-    # [FIXED]: safe='' se | aur space dono properly encode honge
+    # [FIXED] safe='' se | aur space dono properly encode honge
     encoded_inst_token = urllib.parse.quote(inst_token, safe='')
     
     base_domain = "https://api." + "upstox.com"
@@ -53,7 +54,9 @@ def fetch_upstox_intraday_data(token, inst_token, interval):
         response = requests.get(url, headers=headers)
         
         if response.status_code != 200:
+            # [CHANGED] Ab Upstox ka asli error message bhi dikhega
             st.error(f"❌ Server Returned HTTP Error: {response.status_code}")
+            st.code(response.text[:500])
             return None
             
         data = response.json()
@@ -106,7 +109,7 @@ def run_advanced_ml_engine(df, neighbors):
     predicted_signal = clf.predict(latest_live_features)
     
     prob_scores = clf.predict_proba(latest_live_features)
-    # [FIXED]: Correct confidence extraction
+    # [FIXED] Correct confidence extraction
     confidence_level = float(prob_scores[0][predicted_signal[0]] * 100)
     latest_close_price = float(df['Close'].iloc[-1])
         
@@ -123,32 +126,3 @@ def refresh_analytics_grid():
     if not access_token:
         st.info("💡 शुरुआत करने के लिए साइडबार में **Upstox Access Token** डालें।")
         return
-
-    raw_feed = fetch_upstox_intraday_data(access_token, instrument_token, timeframe)
-    
-    if raw_feed is not None:
-        signal, confidence, current_market_price = run_advanced_ml_engine(raw_feed, ml_neighbors)
-        
-        if signal is not None:
-            st.markdown("---")
-            m_col1, m_col2, m_col3 = st.columns(3)
-            
-            with m_col1:
-                st.metric(label=f"Live Price", value=f"₹{current_market_price:.2f}")
-            
-            with m_col2:
-                if signal == 1:
-                    st.markdown("#### 🎯 AI Signal: <span style='color:green; font-weight:bold;'>BUY (Bullish)</span>", unsafe_allow_html=True)
-                else:
-                    st.markdown("#### 🎯 AI Signal: <span style='color:red; font-weight:bold;'>SELL (Bearish)</span>", unsafe_allow_html=True)
-            
-            with m_col3:
-                st.metric(label="AI Confidence", value=f"{confidence:.1f}%")
-            
-            st.markdown("---")
-            st.subheader("📝 Live Candle Matrix (Last 5 Logs)")
-            st.dataframe(raw_feed[['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']].tail(5), use_container_width=True)
-    else:
-        st.error("डेटा सिंक एरर: कृपया टोकन जांचें या मार्केट खुलने का इंतजार करें (9:15 AM)।")
-
-refresh_analytics_grid()
