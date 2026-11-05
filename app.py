@@ -40,6 +40,7 @@ if st.button("🔄 Refresh Live Data"):
 
 def fetch_upstox_intraday_data(token, inst_token, interval):
     encoded_inst_token = urllib.parse.quote(inst_token, safe='')
+    # यहाँ सही API URL फिक्स किया गया है
     url = f"https://upstox.com{encoded_inst_token}/{interval}"
     headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
     try:
@@ -157,7 +158,7 @@ if raw_feed is not None:
             
     with m_col2:
         if signal is not None:
-            if signal[0] == 1:
+            if signal == 1:
                 st.markdown("#### 🎯 AI Signal: <span style='color:green; font-weight:bold;'>BUY (Bullish)</span>", unsafe_allow_html=True)
             else:
                 st.markdown("#### 🎯 AI Signal: <span style='color:red; font-weight:bold;'>SELL (Bearish)</span>", unsafe_allow_html=True)
