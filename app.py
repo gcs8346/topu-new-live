@@ -1,4 +1,15 @@
 import streamlit as st
+# --- AUTO REFRESH CODE START ---
+from streamlit_autorefresh import st_autorefresh
+
+# हर 5 सेकंड (5000ms) में डैशबोर्ड को ऑटोमैटिकली री-रन करेगा
+refresh_count = st_autorefresh(
+    interval=5000, 
+    limit=999999, 
+    key="upstox_live_refresh"
+)
+# --- AUTO REFRESH CODE END ---
+
 import pandas as pd
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
