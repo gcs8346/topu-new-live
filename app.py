@@ -212,3 +212,5 @@ if raw_feed is not None:
             st.warning("🟡 Filter Status: SCROLLING DATA")
             
     with m_col3:
+    pass  # Acts as a temporary placeholder
+
