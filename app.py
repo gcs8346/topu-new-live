@@ -61,7 +61,7 @@ if st.button("🔄 Manual Refresh"):
 # --- Fetch Data Function ---
 def fetch_upstox_intraday_data(token, inst_token, interval):
     encoded_inst_token = urllib.parse.quote(inst_token, safe='')
-    url = f"https://upstox.com/{encoded_inst_token}/{interval}"
+        url = f"https://api.upstox.com/v2/historical-candle/intraday/{encoded_inst_token}/{interval}"
     headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
     try:
         response = requests.get(url, headers=headers, timeout=10)
