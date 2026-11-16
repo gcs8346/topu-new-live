@@ -67,17 +67,22 @@ def fetch_vwap(token, instrument_key):
 
 # --- MCX CRUDE FETCH FUNCTION ---
 def fetch_crude(token, crude_instrument_key):
-    url = "https://api.upstox.com/v2/market-quote/quotes"
-    params = {"instrument_key": crude_instrument_key}
-    headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
-    try:
-        r = requests.get(url, params=params, headers=headers, timeout=10)
-        if r.status_code == 200:
-            d = r.json().get("data", {}).get(crude_instrument_key, {})
-            return d.get("last_price", 0), d.get("close_price", 0)
-    except:
-        pass
+    # Pehle teri wali key try karo, na chale to dusri wali
+    try_keys = [crude_instrument_key, "MCX_FO|573422", "MCX_FO|499095"]
+    for k in try_keys:
+        try:
+            url = "https://api.upstox.com/v2/market-quote/quotes"
+            params = {"instrument_key": k}
+            headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
+            r = requests.get(url, params=params, headers=headers, timeout=10)
+            if r.status_code == 200:
+                d = r.json().get("data", {}).get(k, {})
+                if d.get("last_price", 0) > 0:
+                    return d.get("last_price", 0), d.get("close_price", 0)
+        except:
+            continue
     return 0, 0
+   
 
 def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
     rows = []
