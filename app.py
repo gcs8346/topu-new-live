@@ -1,216 +1,164 @@
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
-import pandas as pd
-import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
 import requests
-from datetime import datetime
-import urllib.parse
+import pandas as pd
 import time
+from datetime import datetime
 
-# --- Page Settings ---
-st.set_page_config(page_title="Live AI Market Engine Pro", layout="wide")
-st.title("🔬 Advanced AI Market Intelligence Dashboard (Optimized)")
-st.markdown("### Multi-Timeframe Analysis, SMC & Sideways Market Filter")
+# पेज सेटअप
+st.set_page_config(page_title="Upstox Gamma-Theta Live Scanner", layout="wide")
+st.title("⚡ Upstox लाइव एक्सपायरी Gamma-Theta & OI डैशबोर्ड")
 
-# --- Auto Refresh Setup (3 Seconds to avoid Upstox Block) ---
-refresh_count = st_autorefresh(
-    interval=3000, 
-    limit=999999, 
-    key="upstox_live_refresh"
+# साइडबार में Upstox API और एक्सपायरी की जानकारी
+st.sidebar.header("🔑 Upstox सेटिंग्स")
+access_token = st.sidebar.text_input("Upstox Access Token डालें:", type="password")
+
+index_choice = st.sidebar.selectbox(
+    "इंडेक्स चुनें:", 
+    [
+        "NSE_INDEX|Nifty 50", 
+        "NSE_INDEX|Nifty Bank", 
+        "NSE_INDEX|Nifty Fin Service",
+        "BSE_INDEX|SENSEX"
+    ]
 )
+expiry_date = st.sidebar.text_input("एक्सपायरी डेट (YYYY-MM-DD):", value="2026-11-19")
+auto_refresh = st.sidebar.checkbox("हर 5 सेकंड में लाइव रिफ्रेश करें", value=False)
 
-# --- Instruments Mapping ---
-INSTRUMENT_MAP = {
-    "NIFTY 50": "NSE_INDEX|Nifty 50",
-    "NIFTY BANK": "NSE_INDEX|Nifty Bank",
-    "BSE SENSEX": "BSE_INDEX|SENSEX",
-    "RELIANCE": "NSE_EQ|INE002A01018",
-    "SBIN (SBI)": "NSE_EQ|INE062A01020",
-    "TATA MOTORS": "NSE_EQ|INE155A01022",
-    "GOLD": "MCX_FO|495213",
-    "SILVER": "MCX_FO|495214",
-    "CRUDEOIL": "MCX_FO|573422",
-    "NATURALGAS": "MCX_FO|574319",
-}
+# FIX 1: सही Upstox API URL
+def fetch_upstox_option_chain(token, instrument_key, expiry):
+    url = "https://api.upstox.com/v2/option/chain"
+    params = {
+        "instrument_key": instrument_key,
+        "expiry_date": expiry
+    }
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json().get("data", [])
+        else:
+            st.error(f"API Error: {response.status_code} - {response.text[:200]} | Token aur Expiry Date जांचें।")
+            return []
+    except Exception as e:
+        st.error(f"कनेक्शन एरर: {e}")
+        return []
 
-# --- Sidebar Controls ---
-st.sidebar.header("🔑 Upstox Access & Settings")
-access_token = st.sidebar.text_input("Enter Upstox Access Token", type="password").strip()
-selected_asset = st.sidebar.selectbox("Select Asset to Analyze", list(INSTRUMENT_MAP.keys()))
-instrument_token = INSTRUMENT_MAP[selected_asset]
+# डेटा प्रोसेस करने और सिग्नल बनाने का फंक्शन - तेरा लॉजिक same है
+def analyze_options(raw_data, selected_index, target_expiry):
+    rows = []
+    spot_price = 0
+    
+    today_str = datetime.today().strftime('%Y-%m-%d')
+    is_expiry_day = (today_str == target_expiry)
+    
+    filter_range = 1500 if "SENSEX" in selected_index else 500
+    
+    if is_expiry_day:
+        min_volume = 100000
+        min_oi_drop = 0
+        market_status_label = "🔴 EXPIRY DAY MODE (High Volume Filter)"
+    else:
+        min_volume = 30000
+        min_oi_drop = 5000
+        market_status_label = "🔵 NORMAL DAY MODE (Low Volume Filter)"
+    
+    for item in raw_data:
+        # FIX 2: Spot Price ek baar hi lo, har baar overwrite mat karo
+        if spot_price == 0:
+            spot_price = item.get("underlying_spot_price", 0)
+        strike = item.get("strike_price", 0)
+        
+        if abs(spot_price - strike) > filter_range:
+            continue
+            
+        for opt_type, key in [("CE", "call_options"), ("PE", "put_options")]:
+            opt = item.get(key, {})
+            mkt = opt.get("market_data", {})
+            greeks = opt.get("option_greeks", {})
+            
+            ltp = mkt.get("ltp", 0)
+            close_p = mkt.get("close_price", 0)
+            vol = mkt.get("volume", 0)
+            oi = mkt.get("oi", 0)
+            prev_oi = mkt.get("prev_oi", 0)
+            oi_change = oi - prev_oi
+            
+            delta = round(greeks.get("delta", 0), 2)
+            gamma = round(greeks.get("gamma", 0), 4)
+            theta = round(greeks.get("theta", 0), 2)
+            
+            # --- तेरा डायनामिक सिग्नल लॉजिक - same hai ---
+            cond_delta = 0.30 <= abs(delta) <= 0.55
+            
+            # FIX 3: Gamma ko bhi signal me joda, warna GAMMA BLAST naam ka matlab nahi tha
+            cond_gamma = gamma > 0.0005
+            
+            if is_expiry_day:
+                cond_oi = oi_change < 0
+                cond_momentum = (vol > min_volume) and (ltp > close_p)
+            else:
+                cond_oi = oi_change < -min_oi_drop or (oi_change < 0 and abs(oi_change) > (oi * 0.02))
+                cond_momentum = (vol > min_volume) and (ltp > close_p)
+            
+            if cond_delta and cond_gamma and cond_oi and cond_momentum:
+                signal = f"🔥 GAMMA BLAST BUY ({opt_type})"
+            elif oi_change > 50000 and ltp < close_p:
+                signal = "⚠️ AVOID (Theta Decay)"
+            else:
+                signal = "⏳ WAIT"
+                
+            rows.append({
+                "Type": opt_type,
+                "Strike": strike,
+                "LTP (₹)": ltp,
+                "Delta": delta,
+                "Gamma": gamma,
+                "Theta": theta,
+                "Volume": vol,
+                "OI Change": oi_change,
+                "SIGNAL": signal
+            })
+            
+    return pd.DataFrame(rows), spot_price, market_status_label
 
-timeframe = st.sidebar.selectbox("Select Timeframe", ["1minute", "3minute", "5minute", "15minute", "30minute"], index=2) # Default 5 min
-ml_neighbors = st.sidebar.slider("AI Depth (Neighbors)", min_value=3, max_value=15, value=5)
-
-# --- Candle Countdown Calculations ---
-tf_map = {"1minute": 60, "3minute": 180, "5minute": 300, "15minute": 900, "30minute": 1800}
-tf_sec = tf_map.get(timeframe, 300)
-now_sec = datetime.now().second + datetime.now().minute * 60
-sec_left = tf_sec - (now_sec % tf_sec)
-
-st.write(f"🔄 Last Sync: {datetime.now().strftime('%H:%M:%S')} | Asset: {selected_asset} | Timeframe: {timeframe} | ⏳ Next Candle in: {sec_left} sec")
+def highlight_signal(val):
+    if "GAMMA BLAST" in str(val):
+        return 'background-color: #1b5e20; color: white; font-weight: bold;'
+    elif "AVOID" in str(val):
+        return 'background-color: #b71c1c; color: white;'
+    return ''
 
 if not access_token:
-    st.warning("⚠️ Pehle sidebar me Token daalo, tabhi data aayega. Token khali hai abhi.")
-    st.stop()
-
-if st.button("🔄 Manual Refresh"):
-    st.rerun()
-
-# --- Fetch Data Function ---
-def fetch_upstox_intraday_data(token, inst_token, interval):
-    encoded_inst_token = urllib.parse.quote(inst_token, safe='')
-    url=f"https://api.upstox.com/v2/historical-candle/intraday/{encoded_inst_token}/{interval}"
-    headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            st.error(f"❌ Server Error: {response.status_code}")
-            return None
-        data = response.json()
-        if data.get("status") == "success" and data.get("data") and data["data"].get("candles"):
-            candles = data["data"]["candles"]
-            df = pd.DataFrame(candles, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume', 'OI'])
-            df = df.iloc[::-1].reset_index(drop=True)
-            for col in ['Open', 'High', 'Low', 'Close', 'Volume', 'OI']:
-                df[col] = df[col].astype(float)
-            return df
-        else:
-            return None
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
-        return None
-
-# --- Smart Money Concepts (SMC) Metrics ---
-def calculate_smc_metrics(df):
-    if df is None or len(df) < 5:
-        return df, [], [], []
-    df = df.copy()
-    fvg_zones = []
-    order_blocks = []
-    structure_breaks = []
+    st.warning("👈 शुरू करने के लिए बाईं तरफ (Sidebar) अपना **Upstox Access Token** और सही **Expiry Date** डालें।")
+else:
+    raw_data = fetch_upstox_option_chain(access_token, index_choice, expiry_date)
     
-    df['Highest_5'] = df['High'].rolling(window=5, center=True).max()
-    df['Lowest_5'] = df['Low'].rolling(window=5, center=True).min()
-    
-    for i in range(2, len(df) - 2):
-        # Fair Value Gaps (FVG)
-        if df['High'].iloc[i-2] < df['Low'].iloc[i]:
-            gap_size = df['Low'].iloc[i] - df['High'].iloc[i-2]
-            if gap_size > (df['Close'].iloc[i] * 0.0002):
-                fvg_zones.append({"Type": "Bullish FVG (Imbalance)", "Price_Range": f"₹{df['High'].iloc[i-2]:.2f} - ₹{df['Low'].iloc[i]:.2f}", "Status": "Active"})
-        elif df['Low'].iloc[i-2] > df['High'].iloc[i]:
-            gap_size = df['Low'].iloc[i-2] - df['High'].iloc[i]
-            if gap_size > (df['Close'].iloc[i] * 0.0002):
-                fvg_zones.append({"Type": "Bearish FVG (Imbalance)", "Price_Range": f"₹{df['High'].iloc[i]:.2f} - ₹{df['Low'].iloc[i-2]:.2f}", "Status": "Active"})
+    if raw_data:
+        df, spot, current_mode = analyze_options(raw_data, index_choice, expiry_date)
         
-        # Order Blocks (OB)
-        if df['Close'].iloc[i] > df['Open'].iloc[i] and (df['Close'].iloc[i] - df['Open'].iloc[i]) > (df['Close'].iloc[i]*0.001):
-            if df['Close'].iloc[i-1] < df['Open'].iloc[i-1]:
-                order_blocks.append({"Type": "Bullish Order Block (Demand)", "Zone": f"₹{df['Low'].iloc[i-1]:.2f} - ₹{df['High'].iloc[i-1]:.2f}", "Timestamp": df['Timestamp'].iloc[i-1]})
-        elif df['Close'].iloc[i] < df['Open'].iloc[i] and (df['Open'].iloc[i] - df['Close'].iloc[i]) > (df['Close'].iloc[i]*0.001):
-            if df['Close'].iloc[i-1] > df['Open'].iloc[i-1]:
-                order_blocks.append({"Type": "Bearish Order Block (Supply)", "Zone": f"₹{df['Low'].iloc[i-1]:.2f} - ₹{df['High'].iloc[i-1]:.2f}", "Timestamp": df['Timestamp'].iloc[i-1]})
+        st.info(f"⚙️ **स्कैनर मोड:** {current_mode}")
+        st.subheader(f"📊 स्पॉट प्राइस: {spot} | अपडेट समय: {time.strftime('%H:%M:%S')}")
         
-        # Market Structure (BOS / CHoCH)
-        if df['Close'].iloc[i] > df['High'].iloc[i-1] and df['High'].iloc[i-1] == df['Highest_5'].iloc[i-1]:
-            structure_breaks.append({"Type": "BOS (Break of Structure)", "Detail": "Bullish Expansion", "Price": df['Close'].iloc[i]})
-        elif df['Close'].iloc[i] < df['Low'].iloc[i-1] and df['Low'].iloc[i-1] == df['Lowest_5'].iloc[i-1]:
-            structure_breaks.append({"Type": "CHoCH (Change of Character)", "Detail": "Bearish Shift", "Price": df['Close'].iloc[i]})
-            
-    return df, fvg_zones, order_blocks, structure_breaks
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### 🟢 CALL Options (CE)")
+            if not df.empty:
+                ce_df = df[df["Type"] == "CE"].drop(columns=["Type"])
+                st.dataframe(ce_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+            else:
+                st.info("डेटा उपलब्ध नहीं है।")
+        with col2:
+            st.markdown("### 🔴 PUT Options (PE)")
+            if not df.empty:
+                pe_df = df[df["Type"] == "PE"].drop(columns=["Type"])
+                st.dataframe(pe_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+            else:
+                st.info("डेटा उपलब्ध नहीं है।")
 
-# --- Optimized AI/ML Engine with Sideways Filter ---
-def run_advanced_ml_engine_optimized(df, neighbors):
-    if df is None or len(df) < 20:
-        return None, 0.0, None, "WAIT (Loading Candles)"
-    
-    df = df.copy()
-    
-    # Technical Indicators For Calculations
-    df['Returns'] = df['Close'].pct_change()
-    df['High_Low_Spread'] = (df['High'] - df['Low']) / df['Close']
-    df['Momentum_Rate'] = df['Close'] - df['Close'].shift(5)
-    
-    # ATR Calculation (Average True Range to measure volatility)
-    df['TR'] = np.maximum(df['High'] - df['Low'], 
-                          np.maximum(abs(df['High'] - df['Close'].shift(1)), 
-                                     abs(df['Low'] - df['Close'].shift(1))))
-    df['ATR'] = df['TR'].rolling(window=14).mean()
-    df['Vol_MA'] = df['Volume'].rolling(window=10).mean()
-    
-    latest = df.iloc[-1]
-    prev = df.iloc[-2]
-    
-    # 1. SIDEWAYS MARKET FILTER LOGIC
-    # Agar volume 10-period average ke 80% se kam hai, ya price ATR range se choti hai
-    is_sideways = (latest['Volume'] < latest['Vol_MA'] * 0.8) or (latest['High_Low_Spread'] < (latest['ATR'] / latest['Close']))
-    
-    if is_sideways:
-        return 0, 50.0, float(latest['Close']), "❌ SIDEWAYS (NO TRADE)"
-
-    # 2. MACHINE LEARNING ENGINE (Runs only if market is trending)
-    df.dropna(inplace=True)
-    if len(df) < neighbors + 5:
-        return None, 0.0, float(latest['Close']), "WAIT (Collecting Data)"
-        
-    df['Directional_Shift'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
-    features = ['Returns', 'High_Low_Spread', 'Momentum_Rate']
-    
-    X = df[features].iloc[:-1]
-    y = df['Directional_Shift'].iloc[:-1]
-    
-    clf = KNeighborsClassifier(n_neighbors=neighbors, weights='distance', metric='euclidean')
-    clf.fit(X, y)
-    
-    latest_live_features = df[features].iloc[[-1]]
-    predicted_signal = int(clf.predict(latest_live_features)[0])
-    prob_scores = clf.predict_proba(latest_live_features)
-    confidence_level = float(prob_scores[0][predicted_signal] * 100)
-    
-    # 3. LIVE WICK REJECTION LOGIC (Your Logic)
-    body_size = abs(latest['Close'] - latest['Open'])
-    lower_wick = latest['Open'] - latest['Low'] if latest['Close'] > latest['Open'] else latest['Close'] - latest['Low']
-    upper_wick = latest['High'] - latest['Close'] if latest['Close'] > latest['Open'] else latest['High'] - latest['Open']
-    
-    early_signal = "🎯 ANALYSIS RUNNING"
-    # Strong lower wick rejection at support
-    if lower_wick > body_size * 1.5 and latest['Close'] > prev['Close']:
-        early_signal = "🔥 BULLISH REJECTION (CALL SIDE SIGHT)"
-    # Strong upper wick rejection at resistance
-    elif upper_wick > body_size * 1.5 and latest['Close'] < prev['Close']:
-        early_signal = "🔥 BEARISH REJECTION (PUT SIDE SIGHT)"
-    elif predicted_signal == 1:
-        early_signal = "📈 MOMENTUM: BUY/BULLISH"
-    elif predicted_signal == 0:
-        early_signal = "📉 MOMENTUM: SELL/BEARISH"
-        
-    return predicted_signal, confidence_level, float(latest['Close']), early_signal
-
-# --- Main Dashboard Execution ---
-raw_feed = fetch_upstox_intraday_data(access_token, instrument_token, timeframe)
-
-if raw_feed is not None:
-    processed_df, fvg_list, ob_list, struct_list = calculate_smc_metrics(raw_feed)
-    signal, confidence, current_market_price, early_signal = run_advanced_ml_engine_optimized(raw_feed, ml_neighbors)
-    
-    # Display Top Metrics
-    m_col1, m_col2, m_col3 = st.columns(3)
-    
-    with m_col1:
-        st.metric(label="Live Market Price", value=f"₹{current_market_price:.2f}" if current_market_price else "Loading...")
-        
-    with m_col2:
-        if "SIDEWAYS" in early_signal:
-            st.error("🚨 Filter Status: NO TRADE ZONE")
-        elif "BULLISH" in early_signal or "BUY" in early_signal:
-            st.success("🟢 Filter Status: BULLISH MODE")
-        elif "BEARISH" in early_signal or "SELL" in early_signal:
-            st.danger("🔴 Filter Status: BEARISH MODE")
-        else:
-            st.warning("🟡 Filter Status: SCROLLING DATA")
-            
-    with m_col3:
-        pass  # Acts as a temporary placeholder
-
+    # FIX 4: while True हटाया, Streamlit wala refresh lagaya - ab freeze nahi hoga
+    if auto_refresh:
+        time.sleep(5)
+        st.rerun()
