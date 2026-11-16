@@ -21,8 +21,7 @@ index_choice = st.sidebar.selectbox(
         "NSE_INDEX|Nifty 50", 
         "NSE_INDEX|Nifty Bank", 
         "NSE_INDEX|Nifty Fin Service",
-        "BSE_INDEX|SENSEX",
-        "CRUDEOIL": "MCX_FO|573422", ]
+        "BSE_INDEX|SENSEX", ]
 )
 expiry_date = st.sidebar.text_input("एक्सपायरी डेट (YYYY-MM-DD):", value="2026-11-19")
 auto_refresh = st.sidebar.checkbox("हर 5 सेकंड में लाइव रिफ्रेश करें", value=False)
