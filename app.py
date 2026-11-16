@@ -30,8 +30,7 @@ st.sidebar.header("🔒 Lock Settings")
 use_vwap_lock = st.sidebar.checkbox("VWAP Lock ON rakhe (Call upar / Put neeche)", value=True)
 use_candle_lock = st.sidebar.checkbox("Candle Close Lock ON rakhe", value=True)
 sound_on = st.sidebar.checkbox("🔔 Sound ON rakhe", value=True)
-if st.sidebar.button("🔔 Sound Test Karo - Bajake Dekho"):
-    play_sound()
+
 def fetch_upstox_option_chain(token, instrument_key, expiry):
     url = "https://api.upstox.com/v2/option/chain"
     params = {"instrument_key": instrument_key, "expiry_date": expiry}
@@ -152,7 +151,8 @@ def play_sound():
     </script>
     <div style="color:green; font-weight:bold; font-size:18px;">🔔 SOUND BAJ RAHI HAI - SIGNAL AAYA HAI</div>
     """, height=50)
-
+if st.sidebar.button("🔔 Sound Test Karo - Bajake Dekho"):
+    play_sound()
 if not access_token:
     st.warning("👈 शुरू करने के लिए बाईं तरफ (Sidebar) अपना **Upstox Access Token** और सही **Expiry Date** डालें।")
 else:
