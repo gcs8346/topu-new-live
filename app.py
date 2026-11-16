@@ -24,7 +24,11 @@ index_choice = st.sidebar.selectbox(
 expiry_date = st.sidebar.text_input("एक्सपायरी डेट (YYYY-MM-DD):", value="2026-11-19")
 auto_refresh = st.sidebar.checkbox("हर 5 सेकंड में लाइव रिफ्रेश करें", value=False)
 
-# FIX 1: सही Upstox API URL
+# --- NAYE LOCK - Sidebar me ON/OFF kar sakta hai ---
+st.sidebar.header("🔒 Lock Settings")
+use_vwap_lock = st.sidebar.checkbox("VWAP Lock ON rakhe (Call upar / Put neeche)", value=True)
+use_candle_lock = st.sidebar.checkbox("Candle Close Lock ON rakhe", value=True)
+
 def fetch_upstox_option_chain(token, instrument_key, expiry):
     url = "https://api.upstox.com/v2/option/chain"
     params = {
@@ -46,8 +50,22 @@ def fetch_upstox_option_chain(token, instrument_key, expiry):
         st.error(f"कनेक्शन एरर: {e}")
         return []
 
-# डेटा प्रोसेस करने और सिग्नल बनाने का फंक्शन - तेरा लॉजिक same है
-def analyze_options(raw_data, selected_index, target_expiry):
+# VWAP nikalne ke liye - Upstox Market Quote se Average Price = VWAP jaisa hi hota hai
+def fetch_vwap(token, instrument_key):
+    url = "https://api.upstox.com/v2/market-quote/quotes"
+    params = {"instrument_key": instrument_key}
+    headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
+    try:
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+        if r.status_code == 200:
+            data = r.json().get("data", {}).get(instrument_key, {})
+            # average_price hi VWAP hota hai
+            return data.get("average_price", 0)
+    except:
+        pass
+    return 0
+
+def analyze_options(raw_data, selected_index, target_expiry, vwap_price, spot_price_for_vwap):
     rows = []
     spot_price = 0
     
@@ -59,14 +77,23 @@ def analyze_options(raw_data, selected_index, target_expiry):
     if is_expiry_day:
         min_volume = 100000
         min_oi_drop = 0
-        market_status_label = "🔴 EXPIRY DAY MODE (High Volume Filter)"
+        market_status_label = "🔴 EXPIRY DAY MODE (High Volume Filter) - Quantity Aadhi Rakhna | 2:30 ke baad Trade Mat Lena"
     else:
         min_volume = 30000
         min_oi_drop = 5000
         market_status_label = "🔵 NORMAL DAY MODE (Low Volume Filter)"
     
+    # LOCK 1 - Candle Close Lock: Signal tabhi jab candle band ho gayi ho
+    # Matlab har minute ke shuru ke 10 second me hi signal pakka hoga
+    now = datetime.now()
+    candle_closed = True
+    if use_candle_lock:
+        # Agar minute ke beech me hai (10 sec se zyada ho gaya), to signal ko WAIT pe rakh
+        # Ye fake signal rokega
+        if now.second > 10:
+            candle_closed = False
+
     for item in raw_data:
-        # FIX 2: Spot Price ek baar hi lo, har baar overwrite mat karo
         if spot_price == 0:
             spot_price = item.get("underlying_spot_price", 0)
         strike = item.get("strike_price", 0)
@@ -90,10 +117,7 @@ def analyze_options(raw_data, selected_index, target_expiry):
             gamma = round(greeks.get("gamma", 0), 4)
             theta = round(greeks.get("theta", 0), 2)
             
-            # --- तेरा डायनामिक सिग्नल लॉजिक - same hai ---
             cond_delta = 0.30 <= abs(delta) <= 0.55
-            
-            # FIX 3: Gamma ko bhi signal me joda, warna GAMMA BLAST naam ka matlab nahi tha
             cond_gamma = gamma > 0.0005
             
             if is_expiry_day:
@@ -103,7 +127,15 @@ def analyze_options(raw_data, selected_index, target_expiry):
                 cond_oi = oi_change < -min_oi_drop or (oi_change < 0 and abs(oi_change) > (oi * 0.02))
                 cond_momentum = (vol > min_volume) and (ltp > close_p)
             
-            if cond_delta and cond_gamma and cond_oi and cond_momentum:
+            # LOCK 2 - VWAP Lock
+            vwap_ok = True
+            if use_vwap_lock and vwap_price > 0:
+                if opt_type == "CE":
+                    vwap_ok = spot_price > vwap_price  # Call tabhi jab Nifty VWAP ke UPAR
+                else:
+                    vwap_ok = spot_price < vwap_price  # Put tabhi jab Nifty VWAP ke NEECHE
+
+            if cond_delta and cond_gamma and cond_oi and cond_momentum and candle_closed and vwap_ok:
                 signal = f"🔥 GAMMA BLAST BUY ({opt_type})"
             elif oi_change > 50000 and ltp < close_p:
                 signal = "⚠️ AVOID (Theta Decay)"
@@ -122,7 +154,7 @@ def analyze_options(raw_data, selected_index, target_expiry):
                 "SIGNAL": signal
             })
             
-    return pd.DataFrame(rows), spot_price, market_status_label
+    return pd.DataFrame(rows), spot_price, market_status_label, candle_closed
 
 def highlight_signal(val):
     if "GAMMA BLAST" in str(val):
@@ -135,30 +167,56 @@ if not access_token:
     st.warning("👈 शुरू करने के लिए बाईं तरफ (Sidebar) अपना **Upstox Access Token** और सही **Expiry Date** डालें।")
 else:
     raw_data = fetch_upstox_option_chain(access_token, index_choice, expiry_date)
+    vwap_val = fetch_vwap(access_token, index_choice)
     
     if raw_data:
-        df, spot, current_mode = analyze_options(raw_data, index_choice, expiry_date)
+        df, spot, current_mode, candle_closed = analyze_options(raw_data, index_choice, expiry_date, vwap_val, spot)
         
         st.info(f"⚙️ **स्कैनर मोड:** {current_mode}")
-        st.subheader(f"📊 स्पॉट प्राइस: {spot} | अपडेट समय: {time.strftime('%H:%M:%S')}")
+        st.subheader(f"📊 स्पॉट प्राइस: {spot} | VWAP: {vwap_val} | अपडेट समय: {time.strftime('%H:%M:%S')}")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("### 🟢 CALL Options (CE)")
-            if not df.empty:
-                ce_df = df[df["Type"] == "CE"].drop(columns=["Type"])
-                st.dataframe(ce_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
-            else:
-                st.info("डेटा उपलब्ध नहीं है।")
-        with col2:
-            st.markdown("### 🔴 PUT Options (PE)")
-            if not df.empty:
-                pe_df = df[df["Type"] == "PE"].drop(columns=["Type"])
-                st.dataframe(pe_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
-            else:
-                st.info("डेटा उपलब्ध नहीं है।")
+        if not use_candle_lock or candle_closed:
+            pass
+        else:
+            st.warning("⏳ Candle Close Lock: Candle abhi band nahi hui hai, signal ke liye candle band hone do...")
 
-    # FIX 4: while True हटाया, Streamlit wala refresh lagaya - ab freeze nahi hoga
+        # --- SIGNAL WALA BANNER + SOUND + SIRF SIGNAL WALI STRIKE ---
+        if not df.empty:
+            signal_df = df[df["SIGNAL"].str.contains("GAMMA BLAST")]
+        else:
+            signal_df = pd.DataFrame()
+
+        if not signal_df.empty:
+            # Bada Banner - Sirf signal wali strike ke liye
+            for _, s in signal_df.iterrows():
+                st.success(f"🚨 SIGNAL BANA HAI - {s['Strike']} {s['Type']} KO KHARIDO | LTP: {s['LTP (₹)']} | Gamma: {s['Gamma']} | OI Change: {s['OI Change']}")
+            
+            # SOUND - Jab signal aayega tabhi bajegi
+            st.markdown("""
+            <audio autoplay>
+            <source src="https://www.soundjay.com/buttons/sounds/beep-07a.mp3" type="audio/mp3">
+            </audio>
+            """, unsafe_allow_html=True)
+
+            st.write("### ✅ Sirf Signal Wali Strike - Isko Kharid Sakte Ho")
+            st.dataframe(signal_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+        else:
+            st.info("⏳ Abhi Koi Signal Nahi Hai - WAIT Karo")
+
+        # Pura data dekhna ho to isko khol le - warna WAIT wala kachra nahi dikhega
+        with st.expander("Pura Option Chain Dekhna Ho To Yahan Click Karo (WAIT wali sab strike)"):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("### 🟢 CALL Options (CE)")
+                if not df.empty:
+                    ce_df = df[df["Type"] == "CE"].drop(columns=["Type"])
+                    st.dataframe(ce_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+            with col2:
+                st.markdown("### 🔴 PUT Options (PE)")
+                if not df.empty:
+                    pe_df = df[df["Type"] == "PE"].drop(columns=["Type"])
+                    st.dataframe(pe_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+
     if auto_refresh:
         time.sleep(5)
         st.rerun()
