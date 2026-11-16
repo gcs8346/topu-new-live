@@ -85,3 +85,154 @@ def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
     spot_price = 0
     today_str = datetime.now(IST).strftime('%Y-%m-%d')
     is_expiry_day = (today_str == target_expiry)
+    filter_range = 1500 if "SENSEX" in selected_index else 500
+    if is_expiry_day:
+        min_volume = 100000
+        min_oi_drop = 0
+        market_status_label = "🔴 EXPIRY DAY MODE - Quantity Aadhi Rakhna | 2:30 ke baad Trade Mat Lena"
+    else:
+        min_volume = 30000
+        min_oi_drop = 5000
+        market_status_label = "🔵 NORMAL DAY MODE"
+    now = datetime.now(IST)
+    candle_closed = True
+    if use_candle_lock:
+        if now.second > 10:
+            candle_closed = False
+    for item in raw_data:
+        if spot_price == 0:
+            spot_price = item.get("underlying_spot_price", 0)
+        strike = item.get("strike_price", 0)
+        if abs(spot_price - strike) > filter_range:
+            continue
+        for opt_type, key in [("CE", "call_options"), ("PE", "put_options")]:
+            opt = item.get(key, {})
+            mkt = opt.get("market_data", {})
+            greeks = opt.get("option_greeks", {})
+            ltp = mkt.get("ltp", 0)
+            close_p = mkt.get("close_price", 0)
+            vol = mkt.get("volume", 0)
+            oi = mkt.get("oi", 0)
+            prev_oi = mkt.get("prev_oi", 0)
+            oi_change = oi - prev_oi
+            delta = round(greeks.get("delta", 0), 2)
+            gamma = round(greeks.get("gamma", 0), 4)
+            theta = round(greeks.get("theta", 0), 2)
+            cond_delta = 0.30 <= abs(delta) <= 0.55
+            cond_gamma = gamma > 0.0005
+            if is_expiry_day:
+                cond_oi = oi_change < 0
+                cond_momentum = (vol > min_volume) and (ltp > close_p)
+            else:
+                cond_oi = oi_change < -min_oi_drop or (oi_change < 0 and abs(oi_change) > (oi * 0.02))
+                cond_momentum = (vol > min_volume) and (ltp > close_p)
+            vwap_ok = True
+            if use_vwap_lock and vwap_price > 0:
+                if opt_type == "CE":
+                    vwap_ok = spot_price > vwap_price
+                else:
+                    vwap_ok = spot_price < vwap_price
+            if cond_delta and cond_gamma and cond_oi and cond_momentum and candle_closed and vwap_ok:
+                signal = f"🔥 GAMMA BLAST BUY ({opt_type})"
+            elif cond_delta and cond_gamma and cond_momentum and vwap_ok:
+                signal = f"🟡 WATCH - {opt_type} ki taiyari karo"
+            elif oi_change > 50000 and ltp < close_p:
+                signal = "⚠️ AVOID (Theta Decay)"
+            else:
+                signal = "⏳ WAIT"
+            rows.append({"Type": opt_type, "Strike": strike, "LTP (₹)": ltp, "Delta": delta, "Gamma": gamma, "Theta": theta, "Volume": vol, "OI Change": oi_change, "SIGNAL": signal})
+    return pd.DataFrame(rows), spot_price, market_status_label, candle_closed
+
+def highlight_signal(val):
+    if "GAMMA BLAST" in str(val):
+        return 'background-color: #1b5e20; color: white; font-weight: bold;'
+    elif "WATCH" in str(val):
+        return 'background-color: #f9a825; color: black; font-weight: bold;'
+    elif "AVOID" in str(val):
+        return 'background-color: #b71c1c; color: white;'
+    return ''
+
+def play_sound():
+    components.html("""
+    <script>
+    function beep(freq, start, dur){
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        var o = ctx.createOscillator();
+        var g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = freq;
+        o.type = 'sine';
+        var t = ctx.currentTime + start;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(1, t+0.05);
+        g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+        o.start(t); o.stop(t+dur+0.1);
+    }
+    beep(880, 0, 0.4);
+    beep(880, 0.5, 0.4);
+    beep(880, 1.0, 0.6);
+    </script>
+    <div style="color:green; font-weight:bold; font-size:18px;">🔔 SOUND BAJ RAHI HAI - SIGNAL AAYA HAI</div>
+    """, height=50)
+
+if not access_token:
+    st.warning("👈 शुरू करने के लिए बाईं तरफ (Sidebar) अपना **Upstox Access Token** और सही **Expiry Date** डालें।")
+else:
+    raw_data = fetch_upstox_option_chain(access_token, index_choice, expiry_date)
+    vwap_val = fetch_vwap(access_token, index_choice)
+    if not raw_data:
+        st.error("🔴 DATA PURANA HAI / DATA NAHI MIL RAHA - Token check karo ya Refresh dabao. Kal wala data mat maano.")
+    if raw_data:
+        df, spot, current_mode, candle_closed = analyze_options(raw_data, index_choice, expiry_date, vwap_val)
+        st.info(f"⚙️ **स्कैनर मोड:** {current_mode}")
+        ist_now_str = datetime.now(IST).strftime('%H:%M:%S')
+        st.subheader(f"📊 स्पॉट प्राइस: {spot} | VWAP: {vwap_val} | अपडेट समय (IST): {ist_now_str}")
+
+        # --- CRUDE OIL LIVE BOX ---
+        if show_crude:
+            crude_ltp, crude_close = fetch_crude(access_token, crude_key)
+            if crude_ltp > 0:
+                crude_change = crude_ltp - crude_close
+                crude_pct = (crude_change / crude_close * 100) if crude_close else 0
+                if crude_change < 0:
+                    st.success(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | {crude_change:.1f} ({crude_pct:.2f}%) 🔽 Neeche hai = Nifty ke liye ACHHA")
+                else:
+                    st.error(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | +{crude_change:.1f} ({crude_pct:.2f}%) 🔼 Upar hai = Nifty ke liye BHARI")
+            else:
+                st.warning("🛢️ Crude ka data nahi aaya - Instrument Key galat ho sakti hai. Upstox ki Instrument JSON file me CRUDEOIL search karke sahi key daalo.")
+
+        if not candle_closed:
+            st.warning("⏳ Candle Close Lock: Candle abhi band nahi hui hai, signal ke liye candle band hone do...")
+        if not df.empty:
+            signal_df = df[df["SIGNAL"].str.contains("GAMMA BLAST")]
+            watch_df = df[df["SIGNAL"].str.contains("WATCH")]
+        else:
+            signal_df = pd.DataFrame()
+            watch_df = pd.DataFrame()
+        if not signal_df.empty:
+            for _, s in signal_df.iterrows():
+                st.success(f"🚨 SIGNAL BANA HAI - {s['Strike']} {s['Type']} KO KHARIDO | LTP: {s['LTP (₹)']} | Gamma: {s['Gamma']} | OI Change: {s['OI Change']}")
+            if sound_on:
+                play_sound()
+            st.write("### ✅ Sirf Signal Wali Strike - Isko Kharid Sakte Ho")
+            st.dataframe(signal_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+        elif not watch_df.empty:
+            st.warning("🟡 WATCH - Teri wali situation aa gayi hai. Taiyaar raho, par abhi entry mat lo. 1 candle aur ruk jao.")
+            st.dataframe(watch_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+        else:
+            st.info("⏳ Abhi Koi Signal Nahi Hai - WAIT Karo")
+        with st.expander("Pura Option Chain Dekhna Ho To Yahan Click Karo"):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("### 🟢 CALL Options (CE)")
+                if not df.empty:
+                    ce_df = df[df["Type"] == "CE"].drop(columns=["Type"])
+                    st.dataframe(ce_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+            with col2:
+                st.markdown("### 🔴 PUT Options (PE)")
+                if not df.empty:
+                    pe_df = df[df["Type"] == "PE"].drop(columns=["Type"])
+                    st.dataframe(pe_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+    if auto_refresh:
+        time.sleep(5)
+        st.rerun()
