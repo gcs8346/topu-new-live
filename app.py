@@ -170,7 +170,7 @@ else:
     vwap_val = fetch_vwap(access_token, index_choice)
     
     if raw_data:
-        df, spot, current_mode, candle_closed = analyze_options(raw_data, index_choice, expiry_date, vwap_val, spot)
+        df, spot, current_mode, candle_closed = analyze_options(raw_data, index_choice, expiry_date, vwap_val, 0)
         
         st.info(f"⚙️ **स्कैनर मोड:** {current_mode}")
         st.subheader(f"📊 स्पॉट प्राइस: {spot} | VWAP: {vwap_val} | अपडेट समय: {time.strftime('%H:%M:%S')}")
