@@ -29,7 +29,7 @@ auto_refresh = st.sidebar.checkbox("हर 5 सेकंड में लाइ
 # --- MCX CRUDE OIL SETTING ---
 st.sidebar.header("🛢️ MCX Crude Oil")
 show_crude = st.sidebar.checkbox("Crude Oil Live dikhao", value=True)
-crude_key = st.sidebar.text_input("Crude Instrument Key:", value="MCX_FO|CRUDEOIL25NOV19FUT")
+crude_key = st.sidebar.text_input("Crude Instrument Key:", value="MCX_FO|573422")
 
 # --- NAYE LOCK ---
 st.sidebar.header("🔒 Lock Settings")
