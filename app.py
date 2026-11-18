@@ -73,7 +73,6 @@ def get_future_instrument_key(index_key):
     return clean_key
 
 def fetch_vwap(token, index_instrument_key):
-    """SAFE JSON FIX: Expecting value line 1 column 1 crash protection added"""
     fut_key = get_future_instrument_key(index_instrument_key)
     url = "https://upstox.com"
     params = {"instrument_key": fut_key}
@@ -94,7 +93,6 @@ def fetch_vwap(token, index_instrument_key):
 
 # --- MCX CRUDE FETCH FUNCTION ---
 def fetch_crude(token, crude_instrument_key):
-    """SAFE JSON FIX: Handles non-json responses from wrong keys gracefully"""
     try_keys = [crude_instrument_key, "MCX_FO|573422", "MCX_FO|499095"]
     for k in try_keys:
         try:
@@ -225,7 +223,7 @@ else:
         ist_now_str = datetime.now(IST).strftime('%H:%M:%S')
         
         vwap_display = f"{vwap_val} (Fut)" if vwap_val > 0 else "FETCHING ERROR (Using Spot Fallback)"
-        st.subheader(f"📊スポット प्राइस: {spot} | Future VWAP: {vwap_display} | अपडेट समय (IST): {ist_now_str}")
+        st.subheader(f"📊 स्पॉट प्राइस: {spot} | Future VWAP: {vwap_display} | अपडेट समय (IST): {ist_now_str}")
 
         if show_crude:
             crude_ltp, crude_close = fetch_crude(access_token, crude_key)
@@ -235,3 +233,5 @@ else:
                 if crude_change < 0:
                     st.success(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | {crude_change:.1f} ({crude_pct:.2f}%) 🔽 Neeche hai = Nifty ke liye ACHHA")
                 else:
+                    st.error(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | +{crude_change:.1f} ({crude_pct:.2f}%) 🔼 Upar hai = Nifty ke liye BHARI")
+            else:
