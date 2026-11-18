@@ -233,4 +233,28 @@ else:
                     st.success(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | {crude_change:.1f} ({crude_pct:.2f}%) 🔽 Neeche hai = Nifty ke liye ACHHA")
                 else:
                     st.error(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | +{crude_change:.1f} ({crude_pct:.2f}%) 🔼 Upar hai = Nifty ke liye BHARI")
-            else:
+            else:        # ... (इसके ऊपर का पूरा कोड वैसा ही रहेगा, यह आपकी फ़ाइल की बिल्कुल आखिरी लाइनें हैं)
+        with st.expander("Pura Option Chain Dekhna Ho To Yahan Click Karo"):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("### 🟢 CALL Options (CE)")
+                if not df.empty:
+                    ce_df = df[df["Type"] == "CE"].drop(columns=["Type"])
+                    st.dataframe(ce_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+            with col2:
+                st.markdown("### 🔴 PUT Options (PE)")
+                if not df.empty:
+                    pe_df = df[df["Type"] == "PE"].drop(columns=["Type"])
+                    st.dataframe(pe_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+
+# 🔄 यहाँ से पुराना 'if auto_refresh:' हटाकर यह नया हिस्सा डालें:
+if auto_refresh:
+    with st.spinner("⏳ Agle 5 second me live data refresh ho raha hai..."):
+        time.sleep(5)
+    st.rerun()
+else:
+    st.write("---")
+    st.info("💡 **लाइव ऑटो-रिफ्रेश बंद है।** नया डेटा देखने के लिए साइडबार से टिक ऑन करें।")
+    if st.button("🔄 Manual Data Refresh"):
+        st.rerun()
+
