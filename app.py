@@ -12,6 +12,7 @@ IST = ZoneInfo("Asia/Kolkata")
 st.set_page_config(page_title="Upstox Gamma-Theta Live Scanner", layout="wide")
 st.title("⚡ Upstox लाइव एक्सपायरी Gamma-Theta & OI डैशबोर्ड")
 
+# --- SIDEBAR SETTINGS ---
 st.sidebar.header("🔑 Upstox सेटिंग्स")
 access_token = st.sidebar.text_input("Upstox Access Token डालें:", type="password")
 
@@ -27,12 +28,7 @@ index_choice = st.sidebar.selectbox(
 expiry_date = st.sidebar.text_input("एक्सपायरी डेट (YYYY-MM-DD):", value="2026-11-19")
 auto_refresh = st.sidebar.checkbox("हर 5 सेकंड में लाइव रिफ्रेश करें", value=False)
 
-# --- MCX CRUDE OIL SETTING ---
-st.sidebar.header("🛢️ MCX Crude Oil")
-show_crude = st.sidebar.checkbox("Crude Oil Live dikhao", value=True)
-crude_key = st.sidebar.text_input("Crude Instrument Key:", value="MCX_FO|573422")
-
-# --- NAYE LOCK ---
+# --- LOCKS ---
 st.sidebar.header("🔒 Lock Settings")
 use_vwap_lock = st.sidebar.checkbox("VWAP Lock ON rakhe (Call upar / Put neeche)", value=True)
 use_candle_lock = st.sidebar.checkbox("Candle Close Lock ON rakhe", value=True)
@@ -50,13 +46,12 @@ def fetch_upstox_option_chain(token, instrument_key, expiry):
             except Exception:
                 return []
         else:
-            st.error(f"API Error: {response.status_code} - {response.text[:200]} | Token aur Expiry Date जांचें।")
+            st.error(f"API Error: {response.status_code} - {response.text[:200]} | Token check karein.")
             return []
     except Exception as e:
-        st.error(f"कनेक्शन एरर (Option Chain): {e}")
+        st.error(f"Option Chain Connection Error: {e}")
         return []
 
-# --- V-PAY (VWAP) INDEX FUTURE MAPPING FUNCTION ---
 def get_future_instrument_key(index_key):
     mapping = {
         "NSE_INDEX|Nifty 50": "NSE_FO|NIFTY",
@@ -66,7 +61,6 @@ def get_future_instrument_key(index_key):
     }
     if index_key in mapping:
         return mapping[index_key]
-    
     clean_key = index_key.replace("NSE_INDEX|", "NSE_FO|").replace("BSE_INDEX|", "BSE_FO|")
     if "Nifty " in clean_key:
         clean_key = clean_key.replace("Nifty ", "")
@@ -91,26 +85,6 @@ def fetch_vwap(token, index_instrument_key):
         pass
     return 0
 
-# --- MCX CRUDE FETCH FUNCTION ---
-def fetch_crude(token, crude_instrument_key):
-    try_keys = [crude_instrument_key, "MCX_FO|573422", "MCX_FO|499095"]
-    for k in try_keys:
-        try:
-            url = "https://upstox.com"
-            params = {"instrument_key": k}
-            headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
-            r = requests.get(url, params=params, headers=headers, timeout=10)
-            if r.status_code == 200:
-                try:
-                    d = r.json().get("data", {}).get(k, {})
-                    if d.get("last_price", 0) > 0:
-                        return d.get("last_price", 0), d.get("close_price", 0)
-                except Exception:
-                    pass
-        except Exception:
-            continue
-    return 0, 0
-
 def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
     rows = []
     spot_price = 0
@@ -120,16 +94,15 @@ def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
     if is_expiry_day:
         min_volume = 100000
         min_oi_drop = 0
-        market_status_label = "🔴 EXPIRY DAY MODE - Quantity Aadhi Rakhna | 2:30 ke baad Trade Mat Lena"
+        market_status_label = "🔴 EXPIRY DAY MODE"
     else:
         min_volume = 30000
         min_oi_drop = 5000
         market_status_label = "🔵 NORMAL DAY MODE"
     now = datetime.now(IST)
     candle_closed = True
-    if use_candle_lock:
-        if now.second > 10:
-            candle_closed = False
+    if use_candle_lock and now.second > 10:
+        candle_closed = False
             
     for item in raw_data:
         if spot_price == 0:
@@ -152,6 +125,7 @@ def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
             theta = round(greeks.get("theta", 0), 2)
             cond_delta = 0.30 <= abs(delta) <= 0.55
             cond_gamma = gamma > 0.0005
+            
             if is_expiry_day:
                 cond_oi = oi_change < 0
                 cond_momentum = (vol > min_volume) and (ltp > close_p)
@@ -191,70 +165,70 @@ def play_sound():
     <script>
     function beep(freq, start, dur){
         var ctx = new (window.AudioContext || window.webkitAudioContext)();
-        var o = ctx.createOscillator();
-        var g = ctx.createGain();
-        o.connect(g); g.connect(ctx.destination);
-        o.frequency.value = freq;
-        o.type = 'sine';
-        var t = ctx.currentTime + start;
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(1, t+0.05);
-        g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+        var o = ctx.createOscillator(); var g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination); o.frequency.value = freq; o.type = 'sine';
+        var t = ctx.currentTime + start; g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(1, t+0.05); g.gain.exponentialRampToValueAtTime(0.001, t+dur);
         o.start(t); o.stop(t+dur+0.1);
     }
-    beep(880, 0, 0.4);
-    beep(880, 0.5, 0.4);
-    beep(880, 1.0, 0.6);
+    beep(880, 0, 0.4); beep(880, 0.5, 0.4); beep(880, 1.0, 0.6);
     </script>
-    <div style="color:green; font-weight:bold; font-size:18px;">🔔 SOUND BAJ RAHI HAI - SIGNAL AAYA HAI</div>
+    <div style="color:green; font-weight:bold; font-size:18px;">🔔 SOUND BAJ RAHI HAI</div>
     """, height=50)
 
+# --- APPLICATION FLOW CONTROL ---
 if not access_token:
-    st.warning("👈 शुरू करने के लिए बाईं तरफ (Sidebar) अपना **Upstox Access Token** और सही **Expiry Date** डालें।")
+    st.warning("👈 शुरू करने के लिए बाईं तरफ अपना Upstox Access Token डालें।")
 else:
     raw_data = fetch_upstox_option_chain(access_token, index_choice, expiry_date)
     vwap_val = fetch_vwap(access_token, index_choice)
+    
     if not raw_data:
-        st.error("🔴 DATA PURANA HAI / DATA NAHI MIL RAHA - Token check karo ya Refresh dabao. Kal wala data mat maano.")
-    if raw_data:
+        st.error("🔴 DATA NAHI MIL RAHA - Token ya Expiry Date check karo.")
+    else:
         df, spot, current_mode, candle_closed = analyze_options(raw_data, index_choice, expiry_date, vwap_val)
-        st.info(f"⚙️ **स्कैनर मोड:** {current_mode}")
+        st.info(f"⚙️ स्कैनर मोड: {current_mode}")
         ist_now_str = datetime.now(IST).strftime('%H:%M:%S')
-        
-        vwap_display = f"{vwap_val} (Fut)" if vwap_val > 0 else "FETCHING ERROR (Using Spot Fallback)"
-        st.subheader(f"📊 स्पॉट प्राइस: {spot} | Future VWAP: {vwap_display} | अपडेट समय (IST): {ist_now_str}")
+        vwap_display = f"{vwap_val} (Fut)" if vwap_val > 0 else "FETCHING ERROR"
+        st.subheader(f"📊 स्पॉट: {spot} | Future VWAP: {vwap_display} | समय (IST): {ist_now_str}")
 
-        if show_crude:
-            crude_ltp, crude_close = fetch_crude(access_token, crude_key)
-            if crude_ltp > 0:
-                crude_change = crude_ltp - crude_close
-                crude_pct = (crude_change / crude_close * 100) if crude_close else 0
-                if crude_change < 0:
-                    st.success(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | {crude_change:.1f} ({crude_pct:.2f}%) 🔽 Neeche hai = Nifty ke liye ACHHA")
-                else:
-                    st.error(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | +{crude_change:.1f} ({crude_pct:.2f}%) 🔼 Upar hai = Nifty ke liye BHARI")
-            else:        # ... (इसके ऊपर का पूरा कोड वैसा ही रहेगा, यह आपकी फ़ाइल की बिल्कुल आखिरी लाइनें हैं)
-        with st.expander("Pura Option Chain Dekhna Ho To Yahan Click Karo"):
+        if not candle_closed:
+            st.warning("⏳ Candle Close Lock: Candle band hone do...")
+            
+        if not df.empty:
+            signal_df = df[df["SIGNAL"].str.contains("GAMMA BLAST")]
+            watch_df = df[df["SIGNAL"].str.contains("WATCH")]
+        else:
+            signal_df = pd.DataFrame()
+            watch_df = pd.DataFrame()
+            
+        if not signal_df.empty:
+            for _, s in signal_df.iterrows():
+                st.success(f"🚨 SIGNAL - {s['Strike']} {s['Type']} | LTP: {s['LTP (₹)']}")
+            if sound_on:
+                play_sound()
+            st.dataframe(signal_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+        elif not watch_df.empty:
+            st.warning("🟡 WATCH - Taiyaar raho, entry mat lo.")
+            st.dataframe(watch_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+        else:
+            st.info("⏳ WAIT Karo - Koi Signal Nahi Hai")
+            
+        with st.expander("Pura Option Chain"):
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown("### 🟢 CALL Options (CE)")
+                st.markdown("### 🟢 CALL (CE)")
                 if not df.empty:
-                    ce_df = df[df["Type"] == "CE"].drop(columns=["Type"])
-                    st.dataframe(ce_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+                    st.dataframe(df[df["Type"] == "CE"].drop(columns=["Type"]).style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
             with col2:
-                st.markdown("### 🔴 PUT Options (PE)")
+                st.markdown("### 🔴 PUT (PE)")
                 if not df.empty:
-                    pe_df = df[df["Type"] == "PE"].drop(columns=["Type"])
-                    st.dataframe(pe_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
+                    st.dataframe(df[df["Type"] == "PE"].drop(columns=["Type"]).style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
 
-# 🔄 यहाँ से पुराना 'if auto_refresh:' हटाकर यह नया हिस्सा डालें:
+# --- 🔄 GLOBAL AUTO REFRESH LOOP RUNNING AT THE ABSOLUTE END ---
 if auto_refresh:
-    with st.spinner("⏳ Agle 5 second me live data refresh ho raha hai..."):
-        time.sleep(5)
+    time.sleep(5)
     st.rerun()
 else:
-    st.write("---")
-    st.info("💡 **लाइव ऑटो-रिफ्रेश बंद है।** नया डेटा देखने के लिए साइडबार से टिक ऑन करें।")
-    if st.button("🔄 Manual Data Refresh"):
+    if st.sidebar.button("🔄 Manual Refresh Trigger"):
         st.rerun()
-
