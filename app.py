@@ -106,11 +106,10 @@ def fetch_crude(token, crude_instrument_key):
                     if d.get("last_price", 0) > 0:
                         return d.get("last_price", 0), d.get("close_price", 0)
                 except Exception:
-                    continue
+                    pass
         except Exception:
             continue
     return 0, 0
-   
 
 def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
     rows = []
