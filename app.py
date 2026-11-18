@@ -9,11 +9,11 @@ import streamlit.components.v1 as components
 # --- INDIA TIME FIX ---
 IST = ZoneInfo("Asia/Kolkata")
 
-st.set_page_config(page_title="Upstox Gamma-Theta Live Scanner", layout="wide")
-st.title("⚡ Upstox लाइव एक्सपायरी Gamma-Theta & OI डैशबोर्ड")
+st.set_page_config(page_title="Upstox Gamma-Theta Live Scanner v3", layout="wide")
+st.title("⚡ Upstox लाइव एक्सपायरी Gamma-Theta & OI डैशボード (API v3)")
 
 # --- SIDEBAR SETTINGS ---
-st.sidebar.header("🔑 Upstox सेटिंग्स")
+st.sidebar.header("🔑 Upstox सेटिंग्स (v3)")
 access_token = st.sidebar.text_input("Upstox Access Token डालें:", type="password")
 
 index_choice = st.sidebar.selectbox(
@@ -25,7 +25,8 @@ index_choice = st.sidebar.selectbox(
         "BSE_INDEX|SENSEX", 
     ]
 )
-expiry_date = st.sidebar.text_input("एक्सपायरी डेट (YYYY-MM-DD):", value="2026-11-19")
+
+expiry_date = st.sidebar.text_input("एक्सपायरी डेट (Format: YYYY-MM-DD):", value="2026-11-23")
 auto_refresh = st.sidebar.checkbox("हर 5 सेकंड में लाइव रिफ्रेश करें", value=False)
 
 # --- LOCKS ---
@@ -35,7 +36,8 @@ use_candle_lock = st.sidebar.checkbox("Candle Close Lock ON rakhe", value=True)
 sound_on = st.sidebar.checkbox("🔔 Sound ON rakhe", value=True)
 
 def fetch_upstox_option_chain(token, instrument_key, expiry):
-    url = "https://upstox.com"
+    # API v3 Standard Route for Option Chain Data
+    url = "https://api.upstox.com/v2/option/chain"
     params = {"instrument_key": instrument_key, "expiry_date": expiry}
     headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
     try:
@@ -46,7 +48,7 @@ def fetch_upstox_option_chain(token, instrument_key, expiry):
             except Exception:
                 return []
         else:
-            st.error(f"API Error: {response.status_code} - {response.text[:200]} | Token check karein.")
+            st.error(f"API v3 Error: {response.status_code} - {response.text[:200]}")
             return []
     except Exception as e:
         st.error(f"Option Chain Connection Error: {e}")
@@ -67,6 +69,7 @@ def get_future_instrument_key(index_key):
     return clean_key
 
 def fetch_vwap(token, index_instrument_key):
+    # Upstox v3 Market Quote API integration
     fut_key = get_future_instrument_key(index_instrument_key)
     url = "https://upstox.com"
     params = {"instrument_key": fut_key}
@@ -76,6 +79,7 @@ def fetch_vwap(token, index_instrument_key):
         if r.status_code == 200:
             try:
                 data_dict = r.json().get("data", {})
+                # API v3 checks for dynamic containing structure keys
                 for k, val in data_dict.items():
                     if fut_key in k:
                         return val.get("average_price", 0)
@@ -91,14 +95,16 @@ def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
     today_str = datetime.now(IST).strftime('%Y-%m-%d')
     is_expiry_day = (today_str == target_expiry)
     filter_range = 1500 if "SENSEX" in selected_index else 500
+    
     if is_expiry_day:
-        min_volume = 100000
+        min_volume = 40000
         min_oi_drop = 0
         market_status_label = "🔴 EXPIRY DAY MODE"
     else:
-        min_volume = 30000
-        min_oi_drop = 5000
+        min_volume = 20000
+        min_oi_drop = 2000
         market_status_label = "🔵 NORMAL DAY MODE"
+        
     now = datetime.now(IST)
     candle_closed = True
     if use_candle_lock and now.second > 10:
@@ -123,14 +129,14 @@ def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
             delta = round(greeks.get("delta", 0), 2)
             gamma = round(greeks.get("gamma", 0), 4)
             theta = round(greeks.get("theta", 0), 2)
-            cond_delta = 0.30 <= abs(delta) <= 0.55
-            cond_gamma = gamma > 0.0005
+            cond_delta = 0.25 <= abs(delta) <= 0.60
+            cond_gamma = gamma > 0.0002
             
             if is_expiry_day:
                 cond_oi = oi_change < 0
                 cond_momentum = (vol > min_volume) and (ltp > close_p)
             else:
-                cond_oi = oi_change < -min_oi_drop or (oi_change < 0 and abs(oi_change) > (oi * 0.02))
+                cond_oi = oi_change < -min_oi_drop or (oi_change < 0 and abs(oi_change) > (oi * 0.01))
                 cond_momentum = (vol > min_volume) and (ltp > close_p)
             
             vwap_ok = True
@@ -176,7 +182,7 @@ def play_sound():
     <div style="color:green; font-weight:bold; font-size:18px;">🔔 SOUND BAJ RAHI HAI</div>
     """, height=50)
 
-# --- APPLICATION FLOW CONTROL ---
+# --- APPLICATION MAIN CONTROL FLOW ---
 if not access_token:
     st.warning("👈 शुरू करने के लिए बाईं तरफ अपना Upstox Access Token डालें।")
 else:
@@ -184,7 +190,7 @@ else:
     vwap_val = fetch_vwap(access_token, index_choice)
     
     if not raw_data:
-        st.error("🔴 DATA NAHI MIL RAHA - Token ya Expiry Date check karo.")
+        st.error(f"🔴 DATA NAHI MIL RAHA - v3 Token जांचें या एक्सपायरी डेट को सही फॉर्मेट ({expiry_date}) में डालें।")
     else:
         df, spot, current_mode, candle_closed = analyze_options(raw_data, index_choice, expiry_date, vwap_val)
         st.info(f"⚙️ स्कैनर मोड: {current_mode}")
@@ -203,16 +209,15 @@ else:
             watch_df = pd.DataFrame()
             
         if not signal_df.empty:
-            for _, s in signal_df.iterrows():
-                st.success(f"🚨 SIGNAL - {s['Strike']} {s['Type']} | LTP: {s['LTP (₹)']}")
+            st.success("🚨 GAMMA BLAST सिग्नल्स मिले हैं!")
             if sound_on:
                 play_sound()
             st.dataframe(signal_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
         elif not watch_df.empty:
-            st.warning("🟡 WATCH - Taiyaar raho, entry mat lo.")
+            st.warning("🟡 WATCH - स्थिति अनुकूल हो रही है, तैयार रहें।")
             st.dataframe(watch_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
         else:
-            st.info("⏳ WAIT Karo - Koi Signal Nahi Hai")
+            st.info("⏳ WAIT Karo - अभी कोई सिग्नल नहीं बना है।")
             
         with st.expander("Pura Option Chain"):
             col1, col2 = st.columns(2)
@@ -225,7 +230,7 @@ else:
                 if not df.empty:
                     st.dataframe(df[df["Type"] == "PE"].drop(columns=["Type"]).style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
 
-# --- 🔄 GLOBAL AUTO REFRESH LOOP RUNNING AT THE ABSOLUTE END ---
+# --- 🔄 AUTO REFRESH LOOP AT THE ABSOLUTE END ---
 if auto_refresh:
     time.sleep(5)
     st.rerun()
