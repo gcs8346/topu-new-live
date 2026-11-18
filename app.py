@@ -21,7 +21,8 @@ index_choice = st.sidebar.selectbox(
         "NSE_INDEX|Nifty 50", 
         "NSE_INDEX|Nifty Bank", 
         "NSE_INDEX|Nifty Fin Service",
-        "BSE_INDEX|SENSEX", ]
+        "BSE_INDEX|SENSEX", 
+    ]
 )
 expiry_date = st.sidebar.text_input("एक्सपायरी डेट (YYYY-MM-DD):", value="2026-11-19")
 auto_refresh = st.sidebar.checkbox("हर 5 सेकंड में लाइव रिफ्रेश करें", value=False)
@@ -52,22 +53,46 @@ def fetch_upstox_option_chain(token, instrument_key, expiry):
         st.error(f"कनेक्शन एरर: {e}")
         return []
 
-def fetch_vwap(token, instrument_key):
+# --- FIX: V-PAY (VWAP) INDEX FUTURE MAPPING FUNCTION ---
+def get_future_instrument_key(index_key):
+    """Index spot ka VWAP nahi hota, isliye uske near month Future ki key nikalte hain"""
+    mapping = {
+        "NSE_INDEX|Nifty 50": "NSE_FO|NIFTY",
+        "NSE_INDEX|Nifty Bank": "NSE_FO|BANKNIFTY",
+        "NSE_INDEX|Nifty Fin Service": "NSE_FO|FINNIFTY",
+        "BSE_INDEX|SENSEX": "BSE_FO|SENSEX"
+    }
+    # Agar mapping me key mil jaye to thik, nahi to basic Clean up karke generate karega
+    if index_key in mapping:
+        return mapping[index_key]
+    
+    # Fallback cleanup logic
+    clean_key = index_key.replace("NSE_INDEX|", "NSE_FO|").replace("BSE_INDEX|", "BSE_FO|")
+    if "Nifty " in clean_key:
+        clean_key = clean_key.replace("Nifty ", "")
+    return clean_key
+
+def fetch_vwap(token, index_instrument_key):
+    """Index Future ka Live average_price (VWAP) nikalne ke liye fix function"""
+    fut_key = get_future_instrument_key(index_instrument_key)
     url = "https://api.upstox.com/v2/market-quote/quotes"
-    params = {"instrument_key": instrument_key}
+    params = {"instrument_key": fut_key}
     headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
     try:
         r = requests.get(url, params=params, headers=headers, timeout=10)
         if r.status_code == 200:
-            data = r.json().get("data", {}).get(instrument_key, {})
-            return data.get("average_price", 0)
+            # Upstox API full key response deti hai, check dynamically
+            data_dict = r.json().get("data", {})
+            # Future key dynamic match logic (kabhi kabhi pure key ke sath pricing aati hai)
+            for k, val in data_dict.items():
+                if fut_key in k:
+                    return val.get("average_price", 0)
     except:
         pass
     return 0
 
 # --- MCX CRUDE FETCH FUNCTION ---
 def fetch_crude(token, crude_instrument_key):
-    # Pehle teri wali key try karo, na chale to dusri wali
     try_keys = [crude_instrument_key, "MCX_FO|573422", "MCX_FO|499095"]
     for k in try_keys:
         try:
@@ -103,6 +128,7 @@ def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
     if use_candle_lock:
         if now.second > 10:
             candle_closed = False
+            
     for item in raw_data:
         if spot_price == 0:
             spot_price = item.get("underlying_spot_price", 0)
@@ -130,12 +156,15 @@ def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
             else:
                 cond_oi = oi_change < -min_oi_drop or (oi_change < 0 and abs(oi_change) > (oi * 0.02))
                 cond_momentum = (vol > min_volume) and (ltp > close_p)
+            
+            # --- FIX: VWAP LOCK LOGIC ON FUTURE VWAP ---
             vwap_ok = True
             if use_vwap_lock and vwap_price > 0:
                 if opt_type == "CE":
                     vwap_ok = spot_price > vwap_price
                 else:
                     vwap_ok = spot_price < vwap_price
+                    
             if cond_delta and cond_gamma and cond_oi and cond_momentum and candle_closed and vwap_ok:
                 signal = f"🔥 GAMMA BLAST BUY ({opt_type})"
             elif cond_delta and cond_gamma and cond_momentum and vwap_ok:
@@ -190,7 +219,10 @@ else:
         df, spot, current_mode, candle_closed = analyze_options(raw_data, index_choice, expiry_date, vwap_val)
         st.info(f"⚙️ **स्कैनर मोड:** {current_mode}")
         ist_now_str = datetime.now(IST).strftime('%H:%M:%S')
-        st.subheader(f"📊 स्पॉट प्राइस: {spot} | VWAP: {vwap_val} | अपडेट समय (IST): {ist_now_str}")
+        
+        # UI fix for showing status of Future VWAP
+        vwap_display = f"{vwap_val} (Fut)" if vwap_val > 0 else "FETCHING ERROR (Using Spot Fallback)"
+        st.subheader(f"📊 स्पॉट प्राइस: {spot} | Future VWAP: {vwap_display} | अपडेट समय (IST): {ist_now_str}")
 
         # --- CRUDE OIL LIVE BOX ---
         if show_crude:
@@ -199,44 +231,3 @@ else:
                 crude_change = crude_ltp - crude_close
                 crude_pct = (crude_change / crude_close * 100) if crude_close else 0
                 if crude_change < 0:
-                    st.success(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | {crude_change:.1f} ({crude_pct:.2f}%) 🔽 Neeche hai = Nifty ke liye ACHHA")
-                else:
-                    st.error(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | +{crude_change:.1f} ({crude_pct:.2f}%) 🔼 Upar hai = Nifty ke liye BHARI")
-            else:
-                st.warning("🛢️ Crude ka data nahi aaya - Instrument Key galat ho sakti hai. Upstox ki Instrument JSON file me CRUDEOIL search karke sahi key daalo.")
-
-        if not candle_closed:
-            st.warning("⏳ Candle Close Lock: Candle abhi band nahi hui hai, signal ke liye candle band hone do...")
-        if not df.empty:
-            signal_df = df[df["SIGNAL"].str.contains("GAMMA BLAST")]
-            watch_df = df[df["SIGNAL"].str.contains("WATCH")]
-        else:
-            signal_df = pd.DataFrame()
-            watch_df = pd.DataFrame()
-        if not signal_df.empty:
-            for _, s in signal_df.iterrows():
-                st.success(f"🚨 SIGNAL BANA HAI - {s['Strike']} {s['Type']} KO KHARIDO | LTP: {s['LTP (₹)']} | Gamma: {s['Gamma']} | OI Change: {s['OI Change']}")
-            if sound_on:
-                play_sound()
-            st.write("### ✅ Sirf Signal Wali Strike - Isko Kharid Sakte Ho")
-            st.dataframe(signal_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
-        elif not watch_df.empty:
-            st.warning("🟡 WATCH - Teri wali situation aa gayi hai. Taiyaar raho, par abhi entry mat lo. 1 candle aur ruk jao.")
-            st.dataframe(watch_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
-        else:
-            st.info("⏳ Abhi Koi Signal Nahi Hai - WAIT Karo")
-        with st.expander("Pura Option Chain Dekhna Ho To Yahan Click Karo"):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("### 🟢 CALL Options (CE)")
-                if not df.empty:
-                    ce_df = df[df["Type"] == "CE"].drop(columns=["Type"])
-                    st.dataframe(ce_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
-            with col2:
-                st.markdown("### 🔴 PUT Options (PE)")
-                if not df.empty:
-                    pe_df = df[df["Type"] == "PE"].drop(columns=["Type"])
-                    st.dataframe(pe_df.style.map(highlight_signal, subset=['SIGNAL']), use_container_width=True)
-    if auto_refresh:
-        time.sleep(5)
-        st.rerun()
