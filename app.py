@@ -45,17 +45,19 @@ def fetch_upstox_option_chain(token, instrument_key, expiry):
     try:
         response = requests.get(url, params=params, headers=headers, timeout=10)
         if response.status_code == 200:
-            return response.json().get("data", [])
+            try:
+                return response.json().get("data", [])
+            except Exception:
+                return []
         else:
             st.error(f"API Error: {response.status_code} - {response.text[:200]} | Token aur Expiry Date जांचें।")
             return []
     except Exception as e:
-        st.error(f"कनेक्शन एरर: {e}")
+        st.error(f"कनेक्शन एरर (Option Chain): {e}")
         return []
 
-# --- FIX: V-PAY (VWAP) INDEX FUTURE MAPPING FUNCTION ---
+# --- V-PAY (VWAP) INDEX FUTURE MAPPING FUNCTION ---
 def get_future_instrument_key(index_key):
-    """Index spot ka VWAP nahi hota, isliye uske near month Future ki key nikalte hain"""
     mapping = {
         "NSE_INDEX|Nifty 50": "NSE_FO|NIFTY",
         "NSE_INDEX|Nifty Bank": "NSE_FO|BANKNIFTY",
@@ -71,7 +73,7 @@ def get_future_instrument_key(index_key):
     return clean_key
 
 def fetch_vwap(token, index_instrument_key):
-    """Index Future ka Live average_price (VWAP) nikalne ke liye fix function"""
+    """SAFE JSON FIX: Expecting value line 1 column 1 crash protection added"""
     fut_key = get_future_instrument_key(index_instrument_key)
     url = "https://upstox.com"
     params = {"instrument_key": fut_key}
@@ -79,16 +81,20 @@ def fetch_vwap(token, index_instrument_key):
     try:
         r = requests.get(url, params=params, headers=headers, timeout=10)
         if r.status_code == 200:
-            data_dict = r.json().get("data", {})
-            for k, val in data_dict.items():
-                if fut_key in k:
-                    return val.get("average_price", 0)
-    except:
+            try:
+                data_dict = r.json().get("data", {})
+                for k, val in data_dict.items():
+                    if fut_key in k:
+                        return val.get("average_price", 0)
+            except Exception:
+                pass
+    except Exception:
         pass
     return 0
 
 # --- MCX CRUDE FETCH FUNCTION ---
 def fetch_crude(token, crude_instrument_key):
+    """SAFE JSON FIX: Handles non-json responses from wrong keys gracefully"""
     try_keys = [crude_instrument_key, "MCX_FO|573422", "MCX_FO|499095"]
     for k in try_keys:
         try:
@@ -97,10 +103,13 @@ def fetch_crude(token, crude_instrument_key):
             headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
             r = requests.get(url, params=params, headers=headers, timeout=10)
             if r.status_code == 200:
-                d = r.json().get("data", {}).get(k, {})
-                if d.get("last_price", 0) > 0:
-                    return d.get("last_price", 0), d.get("close_price", 0)
-        except:
+                try:
+                    d = r.json().get("data", {}).get(k, {})
+                    if d.get("last_price", 0) > 0:
+                        return d.get("last_price", 0), d.get("close_price", 0)
+                except Exception:
+                    continue
+        except Exception:
             continue
     return 0, 0
    
@@ -153,7 +162,6 @@ def analyze_options(raw_data, selected_index, target_expiry, vwap_price):
                 cond_oi = oi_change < -min_oi_drop or (oi_change < 0 and abs(oi_change) > (oi * 0.02))
                 cond_momentum = (vol > min_volume) and (ltp > close_p)
             
-            # --- FIX: VWAP LOCK LOGIC ON FUTURE VWAP ---
             vwap_ok = True
             if use_vwap_lock and vwap_price > 0:
                 if opt_type == "CE":
@@ -217,9 +225,8 @@ else:
         ist_now_str = datetime.now(IST).strftime('%H:%M:%S')
         
         vwap_display = f"{vwap_val} (Fut)" if vwap_val > 0 else "FETCHING ERROR (Using Spot Fallback)"
-        st.subheader(f"📊 स्पॉट प्राइस: {spot} | Future VWAP: {vwap_display} | अपडेट समय (IST): {ist_now_str}")
+        st.subheader(f"📊スポット प्राइस: {spot} | Future VWAP: {vwap_display} | अपडेट समय (IST): {ist_now_str}")
 
-        # --- INDENTATION FIXED HERE: CRUDE OIL LIVE BOX ---
         if show_crude:
             crude_ltp, crude_close = fetch_crude(access_token, crude_key)
             if crude_ltp > 0:
@@ -228,4 +235,3 @@ else:
                 if crude_change < 0:
                     st.success(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | {crude_change:.1f} ({crude_pct:.2f}%) 🔽 Neeche hai = Nifty ke liye ACHHA")
                 else:
-                    st.error(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | +{crude_change:.1f} ({crude_pct:.2f}%) 🔼 Upar hai = Nifty ke liye BHARI")
