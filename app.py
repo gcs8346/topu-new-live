@@ -39,7 +39,7 @@ use_candle_lock = st.sidebar.checkbox("Candle Close Lock ON rakhe", value=True)
 sound_on = st.sidebar.checkbox("🔔 Sound ON rakhe", value=True)
 
 def fetch_upstox_option_chain(token, instrument_key, expiry):
-    url = "https://api.upstox.com/v2/option/chain"
+    url = "https://upstox.com"
     params = {"instrument_key": instrument_key, "expiry_date": expiry}
     headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
     try:
@@ -62,11 +62,9 @@ def get_future_instrument_key(index_key):
         "NSE_INDEX|Nifty Fin Service": "NSE_FO|FINNIFTY",
         "BSE_INDEX|SENSEX": "BSE_FO|SENSEX"
     }
-    # Agar mapping me key mil jaye to thik, nahi to basic Clean up karke generate karega
     if index_key in mapping:
         return mapping[index_key]
     
-    # Fallback cleanup logic
     clean_key = index_key.replace("NSE_INDEX|", "NSE_FO|").replace("BSE_INDEX|", "BSE_FO|")
     if "Nifty " in clean_key:
         clean_key = clean_key.replace("Nifty ", "")
@@ -75,15 +73,13 @@ def get_future_instrument_key(index_key):
 def fetch_vwap(token, index_instrument_key):
     """Index Future ka Live average_price (VWAP) nikalne ke liye fix function"""
     fut_key = get_future_instrument_key(index_instrument_key)
-    url = "https://api.upstox.com/v2/market-quote/quotes"
+    url = "https://upstox.com"
     params = {"instrument_key": fut_key}
     headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
     try:
         r = requests.get(url, params=params, headers=headers, timeout=10)
         if r.status_code == 200:
-            # Upstox API full key response deti hai, check dynamically
             data_dict = r.json().get("data", {})
-            # Future key dynamic match logic (kabhi kabhi pure key ke sath pricing aati hai)
             for k, val in data_dict.items():
                 if fut_key in k:
                     return val.get("average_price", 0)
@@ -96,7 +92,7 @@ def fetch_crude(token, crude_instrument_key):
     try_keys = [crude_instrument_key, "MCX_FO|573422", "MCX_FO|499095"]
     for k in try_keys:
         try:
-            url = "https://api.upstox.com/v2/market-quote/quotes"
+            url = "https://upstox.com"
             params = {"instrument_key": k}
             headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
             r = requests.get(url, params=params, headers=headers, timeout=10)
@@ -220,14 +216,16 @@ else:
         st.info(f"⚙️ **स्कैनर मोड:** {current_mode}")
         ist_now_str = datetime.now(IST).strftime('%H:%M:%S')
         
-        # UI fix for showing status of Future VWAP
         vwap_display = f"{vwap_val} (Fut)" if vwap_val > 0 else "FETCHING ERROR (Using Spot Fallback)"
         st.subheader(f"📊 स्पॉट प्राइस: {spot} | Future VWAP: {vwap_display} | अपडेट समय (IST): {ist_now_str}")
 
-        # --- CRUDE OIL LIVE BOX ---
+        # --- INDENTATION FIXED HERE: CRUDE OIL LIVE BOX ---
         if show_crude:
             crude_ltp, crude_close = fetch_crude(access_token, crude_key)
             if crude_ltp > 0:
                 crude_change = crude_ltp - crude_close
                 crude_pct = (crude_change / crude_close * 100) if crude_close else 0
                 if crude_change < 0:
+                    st.success(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | {crude_change:.1f} ({crude_pct:.2f}%) 🔽 Neeche hai = Nifty ke liye ACHHA")
+                else:
+                    st.error(f"🛢️ MCX CRUDE OIL LIVE (IST): ₹{crude_ltp} | +{crude_change:.1f} ({crude_pct:.2f}%) 🔼 Upar hai = Nifty ke liye BHARI")
